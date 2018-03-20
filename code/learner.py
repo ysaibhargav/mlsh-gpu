@@ -116,10 +116,11 @@ class Learner:
         ])
         """
 
+    # TODO: check optimizer_scope
     def reset_master_optimizer(self):
         for i in range(self.num_policies):
-            optimizer_scope = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, 
-                    'master_adam_%i'%i)
+            optimizer_scope = [var for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+                    if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
 
