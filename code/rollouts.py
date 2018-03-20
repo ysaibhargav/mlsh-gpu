@@ -58,7 +58,9 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
         """
 
         if t > 0 and t % horizon == 0:
-            dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news, "ac" : acs, "ep_rets" : ep_rets, "ep_lens" : ep_lens, "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
+            dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news, 
+                    "ac" : acs, "ep_rets" : ep_rets, "ep_lens" : ep_lens, 
+                    "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_policies)]
             ep_lens = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_policies)]
