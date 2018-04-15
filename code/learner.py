@@ -23,13 +23,10 @@ class Learner:
         self.optim_epochs = optim_epochs
         self.optim_stepsize = optim_stepsize
         self.optim_batchsize = optim_batchsize
-        self.num_policies = num_policies = len(policies)
+        self.num_master_groups = num_master_groups = len(policies)
         self.num_subpolicies = num_subpolicies = len(sub_policies)
         self.ob_space = envs[0].observation_space
         self.ac_space = envs[0].action_space
-
-        self.num_master_groups = num_master_groups = len(policies)
-        self.num_sub_in_grp = num_sub_in_grp = len(envs) 
 
         self.master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32,
             shape=[None, self.ob_space.shape[0]]) for x in range(num_master_groups)]
@@ -118,19 +115,21 @@ class Learner:
 
     # TODO: check optimizer_scope
     def reset_master_optimizer(self):
-        for i in range(self.num_policies):
-            optimizer_scope = [var for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        for i in range(self.num_master_groups):
+            optimizer_scope = [var for var in 
+                    tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
                     if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
 
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param):
-        ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) # advantage * pnew / pold
+        ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
         surr1 = ratio * atarg
         surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
         pol_surr = - U.mean(tf.minimum(surr1, surr2))
         vfloss1 = tf.square(pi.vpred - ret)
-        vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, clip_param)
+        vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, 
+                clip_param)
         vfloss2 = tf.square(vpredclipped - ret)
         vf_loss = .5 * U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vf_loss
@@ -143,7 +142,7 @@ class Learner:
         sample_ob = ob[0][0][0]
         
         def transform_array(array, shape=None):
-            array = np.split(array, self.num_policies, axis=1)
+            array = np.split(array, self.num_master_groups, axis=1)
             if shape != None: 
                 # TODO: check if this logic is correct
                 array = [elem.reshape(-1, shape) for elem in array]
@@ -162,19 +161,19 @@ class Learner:
         atarg = (atarg - mean) / max(std, 0.000001)
 
         d = [Dataset(dict(ob=ob[i], ac=ac[i], atarg=atarg[i], vtarg=tdlamret[i]), 
-            shuffle=True) for i in range(self.num_policies)]
+            shuffle=True) for i in range(self.num_master_groups)]
         optim_batchsize = min(self.optim_batchsize, ob[0].shape[0])
         num_updates = ob[0].shape[0] // optim_batchsize
 
-        [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_policies)]
+        [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
         [f() for f in self.assign_old_eq_new]
 
         for _ in range(self.optim_epochs):
             for __ in range(num_updates):
                 batches = [next(d[i].iterate_once(optim_batchsize))
-                        for i in range(self.num_policies)]
+                        for i in range(self.num_master_groups)]
                 feed_dict = {}
-                for i in range(self.num_policies):
+                for i in range(self.num_master_groups):
                     feed_dict[self.master_obs[i]] = batches[i]['ob']
                     feed_dict[self.master_acs[i]] = batches[i]['ac']
                     feed_dict[self.master_atargs[i]] = batches[i]['atarg']
@@ -182,7 +181,6 @@ class Learner:
 
                 U.get_session().run(self.master_train_steps, feed_dict)
 
-        # TODO: ep rets and lens
         """
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
         listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
@@ -208,8 +206,8 @@ class Learner:
             test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=True)
             test_batchsize = int(ob.shape[0] / num_batches)
 
-            self.subs_assign_old_eq_new[i]() # set old parameter values to new parameter values
-            # Here we do a bunch of optimization epochs over the data
+            self.subs_assign_old_eq_new[i]()
+
             if self.optim_batchsize > 0 and is_optimizing and optimize:
                 self.sub_policies[i].ob_rms.update(ob)
                 for k in range(self.optim_epochs):

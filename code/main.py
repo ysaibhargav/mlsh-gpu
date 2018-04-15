@@ -31,6 +31,8 @@ import multiprocessing
 python3 main.py --task KeyDoor-v0 --num_subs 2 --macro_duration 1000 --num_rollouts 2000 --warmup_time 20 --train_time 30 --replay False KeyDoor 
 """
 
+# TODO: logging
+
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -61,6 +63,7 @@ def train():
 
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
+    # TODO: parallelism?
     config = tf.ConfigProto(allow_soft_placement=True,
                             intra_op_parallelism_threads=ncpu,
                             inter_op_parallelism_threads=ncpu)

@@ -23,10 +23,13 @@ def start(callback, args):
     train_time = args.train_time
 
     num_master_groups = 2
+    # number of batches for the sub-policy optimization
     num_sub_batches = 2
+    # number of sub groups in each group
     num_sub_in_grp = 2
 
     def make_env_vec(seed):
+        # common random numbers in sub groups
         def make_env():
             env = gym.make(args.task)
             env.seed(seed)
@@ -44,7 +47,6 @@ def start(callback, args):
     sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
         shape=[None, ob_space.shape[0]]) for x in range(num_sub_in_grp)]
 
-    # features = Features(name="features", ob=ob)
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         hid_size=32, num_hid_layers=2, num_subpolicies=num_subs) for x in 
         range(num_master_groups)]
