@@ -189,7 +189,12 @@ class Learner:
 
         return np.mean(rews), np.mean(seg["ep_rets"])
         """
-        return np.mean(seg['ep_rets'].reshape(-1))
+        ep_rets = flatten_lists(seg["ep_rets"])
+        ep_rets = flatten_lists(ep_rets)
+        ep_lens = flatten_lists(seg["ep_lens"])
+        ep_lens = flatten_lists(ep_lens)
+
+        return np.mean(ep_rets)
         
 
     def updateSubPolicies(self, test_segs, num_batches, optimize=True):
@@ -218,7 +223,7 @@ class Learner:
                         feed_dict[self.sub_atargs[i]] = test_batch['atarg']
                         feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
-                    U.get_session().run(self.sub_train_steps, feed_dict)
+                        U.get_session().run(self.sub_train_steps[i], feed_dict)
             """
             else:
                 self.sub_policies[i].ob_rms.noupdate()

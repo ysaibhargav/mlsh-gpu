@@ -13,6 +13,7 @@ import rl_algs.common.tf_util as U
 import numpy as np
 # from tinkerbell import logger
 import pickle
+import pdb
 
 # TODO: running mean, std for obs in nets
 def start(callback, args):
@@ -33,7 +34,7 @@ def start(callback, args):
         def make_env():
             env = gym.make(args.task)
             env.seed(seed)
-            env = bench.Monitor(env, logger.get_dir())
+            #env = bench.Monitor(env, logger.get_dir())
             return env
         return DummyVecEnv([make_env for _ in range(num_sub_in_grp)])
 
