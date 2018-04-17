@@ -29,6 +29,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     obs = np.array([ob for _ in range(horizon)])
     rews = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'float32')
     vpreds = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'float32')
+    new = [[False for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
+    new = np.array(new)
     news = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'int32')
     acs = np.array([ac for _ in range(horizon)])
     macro_acs = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'int32')
@@ -62,6 +64,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
             ep_lens = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
+            cur_ep_ret = np.zeros([num_master_groups, num_sub_in_grp], dtype='float32')
+            cur_ep_len = np.zeros([num_master_groups, num_sub_in_grp], dtype='int32')
 
         i = t % horizon
         obs[i] = ob
@@ -72,7 +76,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             macro_acs[int(i/macrolen)] = cur_subpolicy
             macro_vpreds[int(i/macrolen)] = macro_vpred
 
-        ob, rew, new, info = zip(*[env.step(ac[i]) for i, env in enumerate(envs)])
+        ob, rew, _new, info = zip(*[env.step(ac[i]) for i, env in enumerate(envs)])
         rews[i] = rew
 
         # TODO: replay - render the environment every few steps
@@ -81,6 +85,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
 
         cur_ep_ret += rew
         cur_ep_len += 1
+        new = np.logical_or(new, _new) 
         for i in range(num_master_groups):
             for j in range(num_sub_in_grp):
                 if new[i][j] and ((t+1) % macrolen == 0):
@@ -89,6 +94,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     cur_ep_ret[i][j] = 0
                     cur_ep_len[i][j] = 0
                     ob[i][j] = envs[i].envs[j].reset()
+                    new[i][j] = False
         t += 1
 
 # TODO: terminal states accounting and calculation

@@ -25,7 +25,7 @@ def start(callback, args):
 
     num_master_groups = 2
     # number of batches for the sub-policy optimization
-    num_sub_batches = 2
+    num_sub_batches = 8
     # number of sub groups in each group
     num_sub_in_grp = 2
 
@@ -62,7 +62,7 @@ def start(callback, args):
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, entcoeff=0, optim_epochs=10, optim_stepsize=3e-5, 
-            optim_batchsize=64)
+            optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
@@ -95,13 +95,13 @@ def start(callback, args):
             allrolls.append(rolls)
             # train theta
             rollouts.add_advantage_macro(rolls, macro_duration, 0.99, 0.98)
-            gmean = learner.updateMasterPolicy(rolls)
+            mean, t  = learner.updateMasterPolicy(rolls)
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
             # log
-            print(("%d: global: %s" % (mini_ep, gmean)))
+            print(("%d: global: rewards %s, episode length %d" % (mini_ep, mean, t)))
             if args.s:
                 totalmeans.append(gmean)
                 with open('outfile'+str(x)+'.pickle', 'wb') as fp:

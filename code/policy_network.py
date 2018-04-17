@@ -1,4 +1,3 @@
-from rl_algs.common.mpi_running_mean_std import RunningMeanStd
 import rl_algs.common.tf_util as U
 import tensorflow as tf
 import numpy as np

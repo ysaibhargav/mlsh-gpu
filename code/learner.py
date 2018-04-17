@@ -83,35 +83,6 @@ class Learner:
 
         U.initialize()
 
-        # TODO: dummy gradient update for sub-policies
-        """
-        self.assign_subs = []
-        self.change_subs = []
-        self.adams = []
-        self.losses = []
-        self.sp_ac = sub_policies[0].pdtype.sample_placeholder([None])
-        for i in range(self.num_subpolicies):
-            varlist = sub_policies[i].get_trainable_variables()
-            self.adams.append(MpiAdam(varlist))
-            # loss for test
-            loss = self.policy_loss(sub_policies[i], old_sub_policies[i], ob, self.sp_ac, atarg, ret, clip_param)
-            self.losses.append(U.function([ob, self.sp_ac, atarg, ret], U.flatgrad(loss, varlist)))
-
-            self.assign_subs.append(U.function([],[], updates=[tf.assign(oldv, newv)
-                for (oldv, newv) in zipsame(old_sub_policies[i].get_variables(), sub_policies[i].get_variables())]))
-            self.zerograd = U.function([], self.nograd(varlist))
-
-
-        self.master_adam.sync()
-        for i in range(self.num_subpolicies):
-            self.adams[i].sync()
-
-    def nograd(self, var_list):
-        return tf.concat(axis=0, values=[
-            tf.reshape(tf.zeros_like(v), [U.numel(v)])
-            for v in var_list
-        ])
-        """
 
     # TODO: check optimizer_scope
     def reset_master_optimizer(self):
@@ -144,12 +115,13 @@ class Learner:
         def transform_array(array, shape=None):
             array = np.split(array, self.num_master_groups, axis=1)
             if shape != None: 
-                # TODO: check if this logic is correct
                 array = [elem.reshape(-1, shape) for elem in array]
             else:
                 array = [elem.reshape(-1) for elem in array]
             return array
 
+        # ob - T x num_master_groups x num_sub_grps x ob_dims
+        # flatten to make train batches
         ob = transform_array(ob, int(sample_ob.shape[0])) 
         ac = transform_array(ac)
         atarg = transform_array(atarg)
@@ -181,20 +153,12 @@ class Learner:
 
                 U.get_session().run(self.master_train_steps, feed_dict)
 
-        """
-        lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
-        listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
-        lens, rews = map(flatten_lists, zip(*listoflrpairs))
-        logger.record_tabular("EpRewMean", np.mean(rews))
-
-        return np.mean(rews), np.mean(seg["ep_rets"])
-        """
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
         ep_lens = flatten_lists(seg["ep_lens"])
         ep_lens = flatten_lists(ep_lens)
 
-        return np.mean(ep_rets)
+        return np.mean(ep_rets), np.mean(ep_lens)
         
 
     def updateSubPolicies(self, test_segs, num_batches, optimize=True):
@@ -224,14 +188,20 @@ class Learner:
                         feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
                         U.get_session().run(self.sub_train_steps[i], feed_dict)
-            """
             else:
-                self.sub_policies[i].ob_rms.noupdate()
-                blank = self.zerograd()
+                # zero grad
+                #self.sub_policies[i].ob_rms.noupdate()
+                feed_dict = {}
+                obs = np.zeros((32, self.ob_space.shape[0]))
+                acs, vtargs = self.sub_policies[i].act(False, obs)
+                feed_dict[self.sub_obs[i]] = obs 
+                feed_dict[self.sub_acs[i]] = acs 
+                feed_dict[self.sub_atargs[i]] = np.zeros_like(vtargs)
+                feed_dict[self.sub_ret[i]] = vtargs 
                 for _ in range(self.optim_epochs):
                     for _ in range(num_batches):
-                        self.adams[i].update(blank, self.optim_stepsize, 0)
-            """
+                        U.get_session().run(self.sub_train_steps[i], feed_dict)
+
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]

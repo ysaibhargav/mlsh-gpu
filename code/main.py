@@ -32,6 +32,8 @@ python3 main.py --task KeyDoor-v0 --num_subs 2 --macro_duration 1000 --num_rollo
 """
 
 # TODO: logging
+# TODO: Pacman integration
+# TODO: num_rollouts? 
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -50,13 +52,12 @@ LOGDIR = osp.join('/root/results' if sys.platform.startswith('linux')
 
 def callback(it):
     if it % 5 == 0 and it > 3 and not replay:
-        fname = osp.join("savedir/", 'checkpoints', '%.5i'%it)
+        fname = osp.join("savedir", args.savename, 'checkpoints', '%.5i'%it)
         U.save_state(fname)
     if it == 0 and args.continue_iter is not None:
-        fname = osp.join("savedir/"+args.savename+"/checkpoints/", 
+        fname = osp.join("savedir", args.savename, "checkpoints", 
                 str(args.continue_iter))
         U.load_state(fname)
-        pass
 
 def train():
     num_timesteps=1e9
