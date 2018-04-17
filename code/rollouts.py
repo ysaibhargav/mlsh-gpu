@@ -51,12 +51,6 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                 cur_subpolicy = [[args.force_subpolicy for _ in range(num_sub_in_grp)]
                         for _ in range(num_master_groups)]
 
-        # TODO: vectorize this
-        for i in range(num_master_groups):
-            for j in range(num_sub_in_grp):
-                ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
-                        [ob[i][j]])
-
         if t > 0 and t % horizon == 0:
             dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news, 
                     "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
@@ -66,6 +60,12 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             ep_lens = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
             cur_ep_ret = np.zeros([num_master_groups, num_sub_in_grp], dtype='float32')
             cur_ep_len = np.zeros([num_master_groups, num_sub_in_grp], dtype='int32')
+
+        # TODO: vectorize this
+        for i in range(num_master_groups):
+            for j in range(num_sub_in_grp):
+                ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
+                        [ob[i][j]])
 
         i = t % horizon
         obs[i] = ob
@@ -104,7 +104,7 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
     vpred = np.append(seg["macro_vpred"], np.zeros(group_shape, dtype='float32')) 
     T = int(len(seg["rew"])/macrolen)
     seg["macro_adv"] = gaelam = np.empty([T]+group_shape, 'float32')
-    # TODO: double check reshaping in high dims
+    # macro rewards for master
     rew = np.sum(seg["rew"].reshape(-1, macrolen, group_shape[0], group_shape[1]), axis=1)
     lastgaelam = np.zeros(group_shape, dtype='float32') 
     for t in reversed(range(T)):
@@ -115,11 +115,6 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
     seg["macro_ob"] = seg["ob"][0::macrolen]
 
 def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
-    """
-    for i in range(len(allrolls) - 1):
-        for key,value in allrolls[i + 1].items():
-            allrolls[0][key] = np.append(allrolls[0][key], value, axis=0)
-    """
     test_seg = allrolls[0]
     group_shape = list(test_seg["new"][0].shape)
     # calculate advantages

@@ -36,9 +36,9 @@ class Learner:
                 for _ in range(num_master_groups)]
         self.master_ret = [tf.placeholder(dtype=tf.float32, shape=[None])
                 for _ in range(num_master_groups)]
-        self.master_losses = [self.policy_loss(policies[i], old_policies[i], 
-            self.master_obs[i], self.master_acs[i], self.master_atargs[i], 
-            self.master_ret[i], clip_param) for i in range(num_master_groups)]
+        self.master_losses, self.master_kl = zip(*[self.policy_loss(policies[i], 
+            old_policies[i], self.master_obs[i], self.master_acs[i], self.master_atargs[i], 
+            self.master_ret[i], clip_param) for i in range(num_master_groups)])
 
         master_trainers = [tf.train.AdamOptimizer(learning_rate=0.01, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
@@ -63,9 +63,9 @@ class Learner:
                 for _ in range(num_subpolicies)]
         self.sub_ret = [tf.placeholder(dtype=tf.float32, shape=[None])
                 for _ in range(num_subpolicies)]
-        self.sub_losses = [self.policy_loss(sub_policies[i], old_sub_policies[i], 
-            self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], self.sub_ret[i], 
-            clip_param) for i in range(num_subpolicies)]
+        self.sub_losses, self.sub_kl = zip(*[self.policy_loss(sub_policies[i], 
+            old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
+            self.sub_ret[i], clip_param) for i in range(num_subpolicies)])
 
         sub_trainers = [tf.train.AdamOptimizer(learning_rate=optim_stepsize)
                 for _ in range(num_subpolicies)]
@@ -95,6 +95,7 @@ class Learner:
 
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param):
         ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
+        approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
         surr1 = ratio * atarg
         surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
         pol_surr = - U.mean(tf.minimum(surr1, surr2))
@@ -104,7 +105,7 @@ class Learner:
         vfloss2 = tf.square(vpredclipped - ret)
         vf_loss = .5 * U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vf_loss
-        return total_loss
+        return total_loss, approx_kl
 
 
     def updateMasterPolicy(self, seg):
@@ -140,6 +141,7 @@ class Learner:
         [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
         [f() for f in self.assign_old_eq_new]
 
+        kl_array = []
         for _ in range(self.optim_epochs):
             for __ in range(num_updates):
                 batches = [next(d[i].iterate_once(optim_batchsize))
@@ -151,7 +153,10 @@ class Learner:
                     feed_dict[self.master_atargs[i]] = batches[i]['atarg']
                     feed_dict[self.master_ret[i]] = batches[i]['vtarg']
 
-                U.get_session().run(self.master_train_steps, feed_dict)
+                _, kl = U.get_session().run([self.master_train_steps, self.master_kl], 
+                        feed_dict)
+                kl_array.append(kl)
+        print('KL divergence for the master is %g'%np.mean(kl_array))
 
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
@@ -179,6 +184,7 @@ class Learner:
 
             if self.optim_batchsize > 0 and is_optimizing and optimize:
                 self.sub_policies[i].ob_rms.update(ob)
+                kl_array = []
                 for k in range(self.optim_epochs):
                     for test_batch in test_d.iterate_times(test_batchsize, num_batches):
                         feed_dict = {}
@@ -187,7 +193,10 @@ class Learner:
                         feed_dict[self.sub_atargs[i]] = test_batch['atarg']
                         feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
-                        U.get_session().run(self.sub_train_steps[i], feed_dict)
+                        _, kl = U.get_session().run([self.sub_train_steps[i], 
+                            self.sub_kl[i]], feed_dict)
+                        kl_array.append(kl)
+                print('KL div for sub %d is %g'%(i, np.mean(kl_array)))
             """
             else:
                 # zero grad
