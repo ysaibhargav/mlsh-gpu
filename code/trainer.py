@@ -23,11 +23,11 @@ def start(callback, args):
     warmup_time = args.warmup_time
     train_time = args.train_time
 
-    num_master_groups = 2
+    num_master_groups = 1
     # number of batches for the sub-policy optimization
     num_sub_batches = 8
     # number of sub groups in each group
-    num_sub_in_grp = 2
+    num_sub_in_grp = 1
 
     def make_env_vec(seed):
         # common random numbers in sub groups
@@ -46,7 +46,7 @@ def start(callback, args):
     master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32, 
         shape=[None, ob_space.shape[0]]) for x in range(num_master_groups)]
     sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
-        shape=[None, ob_space.shape[0]]) for x in range(num_sub_in_grp)]
+        shape=[None, ob_space.shape[0]]) for x in range(num_subs)]
 
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         hid_size=32, num_hid_layers=2, num_subpolicies=num_subs) for x in 
@@ -101,7 +101,7 @@ def start(callback, args):
                     num_subpolicies=num_subs)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
             # log
-            print(("%d: global: rewards %s, episode length %d" % (mini_ep, mean, t)))
+            print(("%d: rewards %s, episode length %d" % (mini_ep, mean, t)))
             if args.s:
                 totalmeans.append(gmean)
                 with open('outfile'+str(x)+'.pickle', 'wb') as fp:

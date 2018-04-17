@@ -31,7 +31,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     vpreds = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'float32')
     new = [[False for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
     new = np.array(new)
-    news = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'int32')
+    news = np.array([new for _ in range(horizon)])
     acs = np.array([ac for _ in range(horizon)])
     macro_acs = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'int32')
     macro_vpreds = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'float32')
@@ -159,7 +159,7 @@ def split_segments(seg, macrolen, num_subpolicies):
         subpol_counts.append(0)
     for i in range(len(seg["ob"])):
         for j in range(num_master_groups):
-            for k in range(num_subpolicies):
+            for k in range(num_sub_in_grp):
                 mac = seg["macro_ac"][int(i/macrolen)][j][k]
                 subpols[mac]["ob"][subpol_counts[mac]] = seg["ob"][i][j][k]
                 subpols[mac]["adv"][subpol_counts[mac]] = seg["adv"][i][j][k]

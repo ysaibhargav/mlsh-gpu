@@ -188,6 +188,7 @@ class Learner:
                         feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
                         U.get_session().run(self.sub_train_steps[i], feed_dict)
+            """
             else:
                 # zero grad
                 #self.sub_policies[i].ob_rms.noupdate()
@@ -201,6 +202,7 @@ class Learner:
                 for _ in range(self.optim_epochs):
                     for _ in range(num_batches):
                         U.get_session().run(self.sub_train_steps[i], feed_dict)
+            """
 
 
 def flatten_lists(listoflists):

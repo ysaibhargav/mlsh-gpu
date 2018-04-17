@@ -111,3 +111,4 @@ MNIST-data/
 *tar.gz
 *.swo
 *.swn
+savedir/
