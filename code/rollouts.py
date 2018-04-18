@@ -147,8 +147,9 @@ def split_segments(seg, macrolen, num_subpolicies):
         obs = np.array([seg["ob"][0][0][0] for _ in range(subpol_counts[i])])
         advs = np.zeros(subpol_counts[i], 'float32')
         tdlams = np.zeros(subpol_counts[i], 'float32')
+        news = np.zeros(subpol_counts[i], 'int32')
         acs = np.array([seg["ac"][0][0][0] for _ in range(subpol_counts[i])])
-        subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs})
+        subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, "new": news})
     subpol_counts = []
     for i in range(num_subpolicies):
         subpol_counts.append(0)
@@ -160,5 +161,6 @@ def split_segments(seg, macrolen, num_subpolicies):
                 subpols[mac]["adv"][subpol_counts[mac]] = seg["adv"][i][j][k]
                 subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
                 subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
+                subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
                 subpol_counts[mac] += 1
     return subpols

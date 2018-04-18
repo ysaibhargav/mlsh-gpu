@@ -101,7 +101,7 @@ def start(callback, args):
                     num_subpolicies=num_subs)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
             # log
-            print(("%d: rewards %s, episode length %d" % (mini_ep, mean, t)))
+            print(("\n%d: rewards %s, episode length %d" % (mini_ep, mean, t)))
             if args.s:
                 totalmeans.append(gmean)
                 with open('outfile'+str(x)+'.pickle', 'wb') as fp:
