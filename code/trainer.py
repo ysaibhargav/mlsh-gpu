@@ -23,11 +23,11 @@ def start(callback, args):
     warmup_time = args.warmup_time
     train_time = args.train_time
 
-    num_master_groups = 1
+    num_master_groups = 2
     # number of batches for the sub-policy optimization
     num_sub_batches = 8
     # number of sub groups in each group
-    num_sub_in_grp = 1
+    num_sub_in_grp = 2
 
     def make_env_vec(seed):
         # common random numbers in sub groups
@@ -61,7 +61,7 @@ def start(callback, args):
         ac_space=ac_space, hid_size=32, num_hid_layers=2) for x in range(num_subs)]
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, entcoeff=0, optim_epochs=10, optim_stepsize=3e-5, 
+            clip_param=0.2, entcoeff=0, optim_epochs=10, optim_stepsize=3e-4, 
             optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)

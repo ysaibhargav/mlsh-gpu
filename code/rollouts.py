@@ -110,6 +110,8 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
     for t in reversed(range(T)):
         nonterminal = 1-new[t+1]
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
+        currentnonterminal = 1-new[t]
+        delta = currentnonterminal * delta
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     seg["macro_tdlamret"] = seg["macro_adv"] + seg["macro_vpred"]
     seg["macro_ob"] = seg["ob"][0::macrolen]
@@ -126,7 +128,10 @@ def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
     lastgaelam = np.zeros(group_shape, dtype='float32') 
     for t in reversed(range(T)):
         nonterminal = 1-new[t+1]
+        #currentnonterminal = 1-new[t]
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
+        currentnonterminal = 1-new[t]
+        delta = currentnonterminal * delta
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     test_seg["tdlamret"] = test_seg["adv"] + test_seg["vpred"]
 

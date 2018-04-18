@@ -41,7 +41,7 @@ class Learner:
             self.master_ret[i], clip_param) for i in range(num_master_groups)])
         self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss = retvals 
 
-        master_trainers = [tf.train.AdamOptimizer(learning_rate=0.01, 
+        master_trainers = [tf.train.AdamOptimizer(learning_rate=1e-3, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
         master_params = [policies[i].get_trainable_variables() 
                 for i in range(num_master_groups)] 
@@ -94,7 +94,8 @@ class Learner:
                     if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
-
+    # TODO: implement entropy reg
+    # TODO: implement vfcoeff
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param):
         ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
@@ -105,7 +106,7 @@ class Learner:
         vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, 
                 clip_param)
         vfloss2 = tf.square(vpredclipped - ret)
-        vf_loss = 1 * U.mean(tf.maximum(vfloss1, vfloss2))
+        vf_loss = 2 * U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vf_loss
         return total_loss, approx_kl, pol_surr, vf_loss
 
