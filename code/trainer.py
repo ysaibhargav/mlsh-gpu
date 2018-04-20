@@ -18,7 +18,6 @@ import os.path as osp
 import os
 import pdb
 
-# TODO: running mean, std for obs in nets
 def start(callback, args):
     num_subs = args.num_subs
     macro_duration = args.macro_duration
@@ -37,7 +36,7 @@ def start(callback, args):
         def make_env():
             env = gym.make(args.task)
             env.seed(seed)
-            MONITORDIR = osp.join(args.savename, 'monitor')
+            MONITORDIR = osp.join('savedir', args.savename, 'monitor')
             if not osp.exists(MONITORDIR):
                 os.makedirs(MONITORDIR)
             monitor_path = osp.join(MONITORDIR, '%s-%d'%(args.task, seed))

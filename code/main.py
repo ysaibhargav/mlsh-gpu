@@ -32,9 +32,7 @@ import subprocess
 import trainer 
 import multiprocessing
 
-"""
-python3 main.py --task KeyDoor-v0 --num_subs 2 --macro_duration 1000 --num_rollouts 2000 --warmup_time 20 --train_time 30 --replay False KeyDoor 
-"""
+# python3 main.py --task=CartPole-v0 --num_subs=1 --macro_duration=10 --num_rollouts=1000 --warmup_time=2 --train_time=190 --replay=n --num_master_grp=1 --num_sub_batches=8 --num_sub_in_grp=1 --vfcoeff=2. --entcoeff=0 cp
 
 # TODO: logging
 # TODO: Pacman integration

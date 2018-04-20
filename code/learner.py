@@ -98,8 +98,6 @@ class Learner:
                     if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
-    # TODO: implement entropy reg
-    # TODO: implement vfcoeff
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., entcoeff=0):
         entropy = tf.reduce_mean(pi.pd.entropy())
         ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
@@ -184,6 +182,9 @@ class Learner:
         
 
     def updateSubPolicies(self, test_segs, num_batches, optimize=True):
+        optimizable = []
+        test_ds = []
+        batchsizes = []
         for i in range(self.num_subpolicies):
             is_optimizing = True
             test_seg = test_segs[i]
@@ -194,49 +195,77 @@ class Learner:
             else:
                 atarg = np.array(atarg, dtype='float32')
                 atarg = (atarg - atarg.mean()) / max(atarg.std(), 0.000001)
-            test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=True)
+            test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), 
+                    shuffle=True)
             test_batchsize = int(ob.shape[0] / num_batches)
+
+            optimizable.append(is_optimizing)
+            test_ds.append(test_d)
+            batchsizes.append(test_batchsize)
 
             self.subs_assign_old_eq_new[i]()
 
             if self.optim_batchsize > 0 and is_optimizing and optimize:
                 self.sub_policies[i].ob_rms.update(ob)
-                kl_array, pol_surr_array, vf_loss_array, entropy_array = [], [], [], []
-                for k in range(self.optim_epochs):
-                    for test_batch in test_d.iterate_times(test_batchsize, num_batches):
-                        feed_dict = {}
-                        feed_dict[self.sub_obs[i]] = test_batch['ob']
-                        feed_dict[self.sub_acs[i]] = test_batch['ac']
-                        feed_dict[self.sub_atargs[i]] = test_batch['atarg']
-                        feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
-                        _, kl, pol_surr, vf_loss, entropy = U.get_session().run([
-                            self.sub_train_steps[i], self.sub_kl[i], self.sub_pol_surr[i], 
-                            self.sub_vf_loss[i], self.sub_entropy[i]], feed_dict)
-                        kl_array.append(kl)
-                        pol_surr_array.append(pol_surr)
-                        vf_loss_array.append(vf_loss)
-                        entropy_array.append(entropy)
-                print('KL div for sub %d is %g'%(i, np.mean(kl_array)))
-                print('Policy loss for sub %d is %g'%(i, np.mean(pol_surr_array)))
-                print('VF loss for sub %d is %g'%(i, np.mean(vf_loss_array)))
-                print('Entropy loss for sub %d is %g'%(i, np.mean(entropy_array)))
-            """
-            else:
-                # zero grad
-                #self.sub_policies[i].ob_rms.noupdate()
-                feed_dict = {}
-                obs = np.zeros((32, self.ob_space.shape[0]))
-                acs, vtargs = self.sub_policies[i].act(False, obs)
-                feed_dict[self.sub_obs[i]] = obs 
-                feed_dict[self.sub_acs[i]] = acs 
-                feed_dict[self.sub_atargs[i]] = np.zeros_like(vtargs)
-                feed_dict[self.sub_ret[i]] = vtargs 
-                for _ in range(self.optim_epochs):
-                    for _ in range(num_batches):
-                        U.get_session().run(self.sub_train_steps[i], feed_dict)
-            """
+        if optimize:
+            def make_feed_dict():
+                feed_dict = [{} for _ in range(num_batches)]
+
+                for i in range(self.num_subpolicies):
+                    if self.optim_batchsize > 0 and optimizable[i]:
+                        batch_num = 0
+                        for test_batch in test_ds[i].iterate_times(batchsizes[i], 
+                                num_batches):
+                            feed_dict[batch_num][i] = True
+                            feed_dict[batch_num][self.sub_obs[i]] = test_batch['ob']
+                            feed_dict[batch_num][self.sub_acs[i]] = test_batch['ac']
+                            feed_dict[batch_num][self.sub_atargs[i]] = test_batch['atarg']
+                            feed_dict[batch_num][self.sub_ret[i]] = test_batch['vtarg']
+                            batch_num += 1
+
+                return feed_dict
+
+            kl_array, pol_surr_array, vf_loss_array, entropy_array = [[[] for _ in 
+                range(self.num_subpolicies)] for _ in range(4)]
+            for _ in range(self.optim_epochs):
+                feed_dict = make_feed_dict()
+                for _dict in feed_dict:
+                    valid_idx = [i for i in range(self.num_subpolicies) if i in _dict] 
+                    train_steps = ix_(self.sub_train_steps, valid_idx)  
+                    kl = ix_(self.sub_kl, valid_idx)  
+                    pol_surr = ix_(self.sub_pol_surr, valid_idx)  
+                    vf_loss = ix_(self.sub_vf_loss, valid_idx)  
+                    entropy = ix_(self.sub_entropy, valid_idx)  
+                    
+                    keys = list(_dict.keys())
+                    for key in keys:
+                        if isinstance(key, int):
+                            del _dict[key]
+
+                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy = U.get_session().run([
+                        train_steps, kl, pol_surr, vf_loss, entropy], _dict)
+
+                    ix_append_(kl_array, sub_kl, valid_idx)
+                    ix_append_(pol_surr_array, sub_pol_surr, valid_idx)
+                    ix_append_(vf_loss_array, sub_vf_loss, valid_idx)
+                    ix_append_(entropy_array, sub_entropy, valid_idx)
+
+            for i in range(self.num_subpolicies):
+                print('KL div for sub %d is %g'%(i, np.mean(kl_array[i])))
+                print('Policy loss for sub %d is %g'%(i, np.mean(pol_surr_array[i])))
+                print('VF loss for sub %d is %g'%(i, np.mean(vf_loss_array[i])))
+                print('Entropy loss for sub %d is %g'%(i, np.mean(entropy_array[i])))
 
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
+
+
+def ix_(a, b):
+    return [a[_b] for _b in b]
+
+
+def ix_append_(a, b, c):
+    for _c, _b in zip(c, b):
+        a[_c].append(_b)
