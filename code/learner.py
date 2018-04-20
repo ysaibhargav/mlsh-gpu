@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from rl_algs.common import explained_variance, fmt_row, zipsame
-from rl_algs import logger
+from baselines import logger
 import rl_algs.common.tf_util as U
 import time
 from rl_algs.common.mpi_adam import MpiAdam
@@ -41,7 +41,7 @@ class Learner:
             self.master_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
             for i in range(num_master_groups)])
         self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss, \
-                self.master_entropy = retvals 
+                self.master_entropy, self.master_values = retvals 
 
         master_trainers = [tf.train.AdamOptimizer(learning_rate=1e-3, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
@@ -71,7 +71,7 @@ class Learner:
             self.sub_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
             for i in range(num_subpolicies)])
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
-                self.sub_entropy = sub_retvals 
+                self.sub_entropy, self.sub_values = sub_retvals 
 
         sub_trainers = [tf.train.AdamOptimizer(learning_rate=optim_stepsize)
                 for _ in range(num_subpolicies)]
@@ -111,9 +111,10 @@ class Learner:
         vfloss2 = tf.square(vpredclipped - ret)
         vf_loss = U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
-        return total_loss, approx_kl, pol_surr, vf_loss, entropy
+        return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred
 
 
+    # TODO: explained variance
     def updateMasterPolicy(self, seg):
         ob, ac, atarg, tdlamret = seg["macro_ob"], seg["macro_ac"], \
                 seg["macro_adv"], seg["macro_tdlamret"]
@@ -148,7 +149,8 @@ class Learner:
         [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
         [f() for f in self.assign_old_eq_new]
 
-        kl_array, pol_surr_array, vf_loss_array, entropy_array = [], [], [], []
+        kl_array, pol_surr_array, vf_loss_array, entropy_array, values_array = [[] for _ in 
+                range(5)]
         for _ in range(self.optim_epochs):
             for __ in range(num_updates):
                 batches = [next(d[i].iterate_once(optim_batchsize))
@@ -160,25 +162,35 @@ class Learner:
                     feed_dict[self.master_atargs[i]] = batches[i]['atarg']
                     feed_dict[self.master_ret[i]] = batches[i]['vtarg']
 
-                _, kl, pol_surr, vf_loss, entropy = U.get_session().run(
+                _, kl, pol_surr, vf_loss, entropy, values = U.get_session().run(
                         [self.master_train_steps, 
                     self.master_kl, self.master_pol_surr, self.master_vf_loss, 
-                    self.master_entropy], feed_dict)
+                    self.master_entropy, self.master_values], feed_dict)
                 kl_array.append(kl)
                 pol_surr_array.append(pol_surr)
                 vf_loss_array.append(vf_loss)
                 entropy_array.append(entropy)
+        """
         print('KL div for master is %g'%np.mean(kl_array))
         print('Policy loss for master is %g'%np.mean(pol_surr_array))
         print('VF loss for master is %g'%np.mean(vf_loss_array))
         print('Entropy loss for master is %g'%np.mean(entropy_array))
+        """
 
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
         ep_lens = flatten_lists(seg["ep_lens"])
         ep_lens = flatten_lists(ep_lens)
 
-        return np.mean(ep_rets), np.mean(ep_lens)
+        logger.logkv('Mean episode return', np.mean(ep_rets))
+        logger.logkv('Mean episode length', np.mean(ep_lens))
+        logger.logkv('(M) KL', np.mean(kl_array))
+        logger.logkv('(M) policy loss', np.mean(pol_surr_array))
+        logger.logkv('(M) value loss', np.mean(vf_loss_array))
+        logger.logkv('(M) entropy loss', np.mean(entropy_array))
+        logger.dumpkvs()
+
+        #return np.mean(ep_rets), np.mean(ep_lens)
         
 
     def updateSubPolicies(self, test_segs, num_batches, optimize=True):
@@ -252,10 +264,17 @@ class Learner:
                     ix_append_(entropy_array, sub_entropy, valid_idx)
 
             for i in range(self.num_subpolicies):
+                logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
+                logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
+                logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
+                logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
+                logger.dumpkvs()
+                """
                 print('KL div for sub %d is %g'%(i, np.mean(kl_array[i])))
                 print('Policy loss for sub %d is %g'%(i, np.mean(pol_surr_array[i])))
                 print('VF loss for sub %d is %g'%(i, np.mean(vf_loss_array[i])))
                 print('Entropy loss for sub %d is %g'%(i, np.mean(entropy_array[i])))
+                """
 
 
 def flatten_lists(listoflists):

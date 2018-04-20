@@ -60,7 +60,7 @@ def callback(it):
     if it % 5 == 0 and it > 3 and not replay:
         fname = osp.join(CKPTDIR, '%.5i'%it)
         U.save_state(fname)
-    if it == 0 and args.continue_iter is not None:
+    if args.continue_iter is not None and int(args.continue_iter)+1 == it:
         fname = osp.join(CKPTDIR, str(args.continue_iter))
         U.load_state(fname)
 
@@ -69,7 +69,6 @@ def train():
 
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
-    # TODO: parallelism?
     config = tf.ConfigProto(allow_soft_placement=True,
                             intra_op_parallelism_threads=ncpu,
                             inter_op_parallelism_threads=ncpu)

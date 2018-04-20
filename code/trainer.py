@@ -74,8 +74,10 @@ def start(callback, args):
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
-
-    for x in range(10000):
+    start_iter = 0
+    if args.continue_iter is not None:
+        start_iter = int(args.continue_iter)+1
+    for x in range(start_iter, 10000):
         callback(x)
         if x == 0:
             [sub_policy.reset() for sub_policy in sub_policies]
@@ -96,17 +98,20 @@ def start(callback, args):
 
         totalmeans = []
         while mini_ep < warmup_time+train_time:
-            mini_ep += 1
+            print('*'*10 + ' Iteration %d, Mini-ep %d '%(x, mini_ep) + '*'*10)
+            if mini_ep == 0:
+                print('WARM-UP')
+            elif mini_ep == warmup_time:
+                print('JOINT TRAINING')
             # rollout
             rolls = rollout.__next__()
             allrolls = []
             allrolls.append(rolls)
             # train theta
             rollouts.add_advantage_macro(rolls, macro_duration, 0.99, 0.98)
-            mean, t  = learner.updateMasterPolicy(rolls)
+            learner.updateMasterPolicy(rolls)
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
-            # log
-            print(("%d: rewards %s, episode length %d\n" % (mini_ep, mean, t)))
+            mini_ep += 1
