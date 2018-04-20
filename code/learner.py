@@ -29,7 +29,7 @@ class Learner:
         self.ac_space = envs[0].action_space
 
         self.master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32,
-            shape=[None, self.ob_space.shape[0]]) for x in range(num_master_groups)]
+            shape=[None] + list(self.ob_space.shape)) for x in range(num_master_groups)]
         self.master_acs = [policies[0].pdtype.sample_placeholder([None]) 
                 for _ in range(num_master_groups)]
         self.master_atargs = [tf.placeholder(dtype=tf.float32, shape=[None])
@@ -57,7 +57,7 @@ class Learner:
        
 
         self.sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32,
-            shape=[None, self.ob_space.shape[0]]) for x in range(num_subpolicies)]
+            shape=[None] + list(self.ob_space.shape)) for x in range(num_subpolicies)]
         self.sub_acs = [sub_policies[0].pdtype.sample_placeholder([None]) 
                 for _ in range(num_subpolicies)]
         self.sub_atargs = [tf.placeholder(dtype=tf.float32, shape=[None])
@@ -119,14 +119,15 @@ class Learner:
         def transform_array(array, shape=None):
             array = np.split(array, self.num_master_groups, axis=1)
             if shape != None: 
-                array = [elem.reshape(-1, shape) for elem in array]
+                shape = [-1] + shape
+                array = [elem.reshape(*shape) for elem in array]
             else:
                 array = [elem.reshape(-1) for elem in array]
             return array
 
         # ob - T x num_master_groups x num_sub_grps x ob_dims
         # flatten to make train batches
-        ob = transform_array(ob, int(sample_ob.shape[0])) 
+        ob = transform_array(ob, list(sample_ob.shape)) 
         ac = transform_array(ac)
         atarg = transform_array(atarg)
         tdlamret = transform_array(tdlamret) 

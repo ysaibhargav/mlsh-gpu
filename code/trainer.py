@@ -8,6 +8,7 @@ from observation_network import Features
 from learner import Learner
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.atari_wrappers import wrap_deepmind
 from baselines import bench, logger
 import rl_algs.common.tf_util as U
 import numpy as np
@@ -23,17 +24,19 @@ def start(callback, args):
     warmup_time = args.warmup_time
     train_time = args.train_time
 
-    num_master_groups = 2
+    num_master_groups = 1
     # number of batches for the sub-policy optimization
     num_sub_batches = 8
     # number of sub groups in each group
-    num_sub_in_grp = 2
+    num_sub_in_grp = 1
 
     def make_env_vec(seed):
         # common random numbers in sub groups
         def make_env():
             env = gym.make(args.task)
             env.seed(seed)
+            if 'Atari' in str(env.__dict__['env']):
+                env = wrap_deepmind(env, frame_stack=True)
             #env = bench.Monitor(env, logger.get_dir())
             return env
         return DummyVecEnv([make_env for _ in range(num_sub_in_grp)])
@@ -44,9 +47,9 @@ def start(callback, args):
 
     # observation in.
     master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32, 
-        shape=[None, ob_space.shape[0]]) for x in range(num_master_groups)]
+        shape=[None] + list(ob_space.shape)) for x in range(num_master_groups)]
     sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
-        shape=[None, ob_space.shape[0]]) for x in range(num_subs)]
+        shape=[None] + list(ob_space.shape)) for x in range(num_subs)]
 
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         hid_size=32, num_hid_layers=2, num_subpolicies=num_subs) for x in 

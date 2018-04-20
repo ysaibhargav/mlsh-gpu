@@ -4,6 +4,7 @@ import numpy as np
 import gym
 from rl_algs.common.distributions import CategoricalPdType
 from running_mean_std import RunningMeanStd
+import pdb
 
 
 class Policy(object):
@@ -13,9 +14,12 @@ class Policy(object):
         self.num_subpolicies = num_subpolicies
         self.gaussian_fixed_var = gaussian_fixed_var
         self.num_subpolicies = num_subpolicies
+        shape = []
+        for d in range(1, len(ob.shape)):
+            shape.append(ob.shape[d])
 
         with tf.variable_scope("obfilter", reuse=tf.AUTO_REUSE):
-            self.ob_rms = RunningMeanStd(shape=(ob.get_shape()[1],))
+            self.ob_rms = RunningMeanStd(shape=shape)
         obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
 
         with tf.variable_scope(name):

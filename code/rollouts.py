@@ -97,7 +97,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     new[i][j] = False
         t += 1
 
-# TODO: terminal states accounting and calculation
+# TODO: why is new[t+1] used? 
 def add_advantage_macro(seg, macrolen, gamma, lam):
     group_shape = list(seg["new"][0].shape)
     new = np.append(seg["new"][0::macrolen], np.zeros(group_shape, dtype='int32')) 

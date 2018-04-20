@@ -5,6 +5,7 @@ import functools
 import copy
 import os
 import collections
+import pdb
 
 
 # ================================================================
@@ -325,8 +326,9 @@ def conv2d(x, num_filters, name, filter_size=(3, 3), stride=(1, 1), pad="SAME", 
 
 
 def dense(x, size, name, weight_init=None, bias=True):
-    w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
-    ret = tf.matmul(x, w)
+    w = tf.get_variable(name + "/w", list(x.get_shape()[1:]) + [size], initializer=weight_init)
+    #ret = tf.matmul(x, w)
+    ret = tf.tensordot(x, w, axes=[list(range(1, len(x.shape))), list(range(0, len(w.shape)-1))])
     if bias:
         b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
         return ret + b

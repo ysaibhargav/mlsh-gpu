@@ -11,12 +11,15 @@ class SubPolicy(object):
         self.hid_size = hid_size
         self.num_hid_layers = num_hid_layers
         self.gaussian_fixed_var = gaussian_fixed_var
+        shape = []
+        for d in range(1, len(ob.shape)):
+            shape.append(ob.shape[d])
 
         with tf.variable_scope(name):
             self.scope = tf.get_variable_scope().name
 
             with tf.variable_scope("obfilter"):
-                self.ob_rms = RunningMeanStd(shape=(ob.get_shape()[1],))
+                self.ob_rms = RunningMeanStd(shape=shape)
             obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
             # obz = ob
 
