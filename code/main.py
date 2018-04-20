@@ -7,15 +7,20 @@ parser.add_argument('--num_subs', type=int)
 parser.add_argument('--macro_duration', type=int)
 parser.add_argument('--num_rollouts', type=int)
 parser.add_argument('--warmup_time', type=int)
+parser.add_argument('--num_master_grps', type=int)
+parser.add_argument('--num_sub_batches', type=int)
+parser.add_argument('--num_sub_in_grp', type=int)
+parser.add_argument('--vfcoeff', type=float)
+parser.add_argument('--entcoeff', type=float)
 parser.add_argument('--train_time', type=int)
 parser.add_argument('--force_subpolicy', type=int)
 parser.add_argument('--replay', type=str)
-parser.add_argument('-s', action='store_true')
 parser.add_argument('--continue_iter', type=str)
 args = parser.parse_args()
 
 from rl_algs.common import set_global_seeds, tf_util as U
 import os.path as osp
+import os
 import gym, logging
 import numpy as np
 from collections import deque
@@ -34,6 +39,8 @@ python3 main.py --task KeyDoor-v0 --num_subs 2 --macro_duration 1000 --num_rollo
 # TODO: logging
 # TODO: Pacman integration
 # TODO: num_rollouts? 
+# TODO: CNN for pacman
+# TODO: monitor env and record episodes
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -49,14 +56,14 @@ args.replay = str2bool(args.replay)
 RELPATH = osp.join(args.savename)
 LOGDIR = osp.join('/root/results' if sys.platform.startswith('linux') 
         else '/tmp', RELPATH)
+CKPTDIR = osp.join("savedir", args.savename, 'checkpoints')
 
 def callback(it):
     if it % 5 == 0 and it > 3 and not replay:
-        fname = osp.join("savedir", args.savename, 'checkpoints', '%.5i'%it)
+        fname = osp.join(CKPTDIR, '%.5i'%it)
         U.save_state(fname)
     if it == 0 and args.continue_iter is not None:
-        fname = osp.join("savedir", args.savename, "checkpoints", 
-                str(args.continue_iter))
+        fname = osp.join(CKPTDIR, str(args.continue_iter))
         U.load_state(fname)
 
 def train():
@@ -76,6 +83,8 @@ def train():
 def main():
     if osp.exists(LOGDIR):
         shutil.rmtree(LOGDIR)
+    if not osp.exists(CKPTDIR):
+        os.makedirs(CKPTDIR)
     train()
 
 if __name__ == '__main__':

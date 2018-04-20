@@ -13,7 +13,7 @@ export PYTHONPATH=$PYTHONPATH:/.../mlsh-gpu/rl-algs;
 ##### How to run
 
 ```
-python3 main.py --task [task_name] --num_subs [num_subs] --macro_duration [macro_duration] --num_rollouts [num_rollouts] --warmup_time [warmup_time] --train_time [train_time] --replay [replay] [savename] 
+python3 main.py --task [task_name] --num_subs [num_subs] --macro_duration [macro_duration] --num_rollouts [num_rollouts] --warmup_time [warmup_time] --train_time [train_time] --num_master_grp [num_master_grp] --num_sub_batches [num_sub_batches] --num_sub_in_grp [num_sub_in_grp] --vfcoeff [vfcoeff] --entcoeff [entcoeff] --replay [replay] [savename] 
 ```
 
 ##### Note

@@ -14,6 +14,8 @@ import rl_algs.common.tf_util as U
 import numpy as np
 # from tinkerbell import logger
 import pickle
+import os.path as osp
+import os
 import pdb
 
 # TODO: running mean, std for obs in nets
@@ -24,20 +26,24 @@ def start(callback, args):
     warmup_time = args.warmup_time
     train_time = args.train_time
 
-    num_master_groups = 1
+    num_master_groups = args.num_master_grps
     # number of batches for the sub-policy optimization
-    num_sub_batches = 8
+    num_sub_batches = args.num_sub_batches
     # number of sub groups in each group
-    num_sub_in_grp = 1
+    num_sub_in_grp = args.num_sub_in_grp
 
     def make_env_vec(seed):
         # common random numbers in sub groups
         def make_env():
             env = gym.make(args.task)
             env.seed(seed)
+            MONITORDIR = osp.join(args.savename, 'monitor')
+            if not osp.exists(MONITORDIR):
+                os.makedirs(MONITORDIR)
+            monitor_path = osp.join(MONITORDIR, '%s-%d'%(args.task, seed))
+            env = bench.Monitor(env, monitor_path, allow_early_resets=True)
             if 'Atari' in str(env.__dict__['env']):
                 env = wrap_deepmind(env, frame_stack=True)
-            #env = bench.Monitor(env, logger.get_dir())
             return env
         return DummyVecEnv([make_env for _ in range(num_sub_in_grp)])
 
@@ -64,8 +70,8 @@ def start(callback, args):
         ac_space=ac_space, hid_size=32, num_hid_layers=2) for x in range(num_subs)]
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, entcoeff=0, optim_epochs=10, optim_stepsize=3e-4, 
-            optim_batchsize=32)
+            clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, optim_epochs=10, 
+            optim_stepsize=3e-4, optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
@@ -104,8 +110,4 @@ def start(callback, args):
                     num_subpolicies=num_subs)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
             # log
-            print(("\n%d: rewards %s, episode length %d" % (mini_ep, mean, t)))
-            if args.s:
-                totalmeans.append(gmean)
-                with open('outfile'+str(x)+'.pickle', 'wb') as fp:
-                    pickle.dump(totalmeans, fp)
+            print(("%d: rewards %s, episode length %d\n" % (mini_ep, mean, t)))

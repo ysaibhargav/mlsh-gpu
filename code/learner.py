@@ -12,7 +12,7 @@ import pdb
 
 class Learner:
     def __init__(self, envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, entcoeff=0, optim_epochs=10, optim_stepsize=3e-4, 
+            clip_param=0.2, vfcoeff=1., entcoeff=0, optim_epochs=10, optim_stepsize=3e-4, 
             optim_batchsize=64):
         self.policies = policies
         self.sub_policies = sub_policies
@@ -38,8 +38,10 @@ class Learner:
                 for _ in range(num_master_groups)]
         retvals = zip(*[self.policy_loss(policies[i], 
             old_policies[i], self.master_obs[i], self.master_acs[i], self.master_atargs[i], 
-            self.master_ret[i], clip_param) for i in range(num_master_groups)])
-        self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss = retvals 
+            self.master_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
+            for i in range(num_master_groups)])
+        self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss, \
+                self.master_entropy = retvals 
 
         master_trainers = [tf.train.AdamOptimizer(learning_rate=1e-3, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
@@ -66,8 +68,10 @@ class Learner:
                 for _ in range(num_subpolicies)]
         sub_retvals = zip(*[self.policy_loss(sub_policies[i], 
             old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
-            self.sub_ret[i], clip_param) for i in range(num_subpolicies)])
-        self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss = sub_retvals 
+            self.sub_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
+            for i in range(num_subpolicies)])
+        self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
+                self.sub_entropy = sub_retvals 
 
         sub_trainers = [tf.train.AdamOptimizer(learning_rate=optim_stepsize)
                 for _ in range(num_subpolicies)]
@@ -96,19 +100,20 @@ class Learner:
         
     # TODO: implement entropy reg
     # TODO: implement vfcoeff
-    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param):
+    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., entcoeff=0):
+        entropy = tf.reduce_mean(pi.pd.entropy())
         ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
         surr1 = ratio * atarg
         surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
-        pol_surr = - U.mean(tf.minimum(surr1, surr2))
+        pol_surr = -U.mean(tf.minimum(surr1, surr2))
         vfloss1 = tf.square(pi.vpred - ret)
         vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, 
                 clip_param)
         vfloss2 = tf.square(vpredclipped - ret)
-        vf_loss = 2 * U.mean(tf.maximum(vfloss1, vfloss2))
-        total_loss = pol_surr + vf_loss
-        return total_loss, approx_kl, pol_surr, vf_loss
+        vf_loss = U.mean(tf.maximum(vfloss1, vfloss2))
+        total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
+        return total_loss, approx_kl, pol_surr, vf_loss, entropy
 
 
     def updateMasterPolicy(self, seg):
@@ -145,7 +150,7 @@ class Learner:
         [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
         [f() for f in self.assign_old_eq_new]
 
-        kl_array, pol_surr_array, vf_loss_array = [], [], []
+        kl_array, pol_surr_array, vf_loss_array, entropy_array = [], [], [], []
         for _ in range(self.optim_epochs):
             for __ in range(num_updates):
                 batches = [next(d[i].iterate_once(optim_batchsize))
@@ -157,14 +162,18 @@ class Learner:
                     feed_dict[self.master_atargs[i]] = batches[i]['atarg']
                     feed_dict[self.master_ret[i]] = batches[i]['vtarg']
 
-                _, kl, pol_surr, vf_loss = U.get_session().run([self.master_train_steps, 
-                    self.master_kl, self.master_pol_surr, self.master_vf_loss], feed_dict)
+                _, kl, pol_surr, vf_loss, entropy = U.get_session().run(
+                        [self.master_train_steps, 
+                    self.master_kl, self.master_pol_surr, self.master_vf_loss, 
+                    self.master_entropy], feed_dict)
                 kl_array.append(kl)
                 pol_surr_array.append(pol_surr)
                 vf_loss_array.append(vf_loss)
+                entropy_array.append(entropy)
         print('KL div for master is %g'%np.mean(kl_array))
         print('Policy loss for master is %g'%np.mean(pol_surr_array))
         print('VF loss for master is %g'%np.mean(vf_loss_array))
+        print('Entropy loss for master is %g'%np.mean(entropy_array))
 
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
@@ -192,7 +201,7 @@ class Learner:
 
             if self.optim_batchsize > 0 and is_optimizing and optimize:
                 self.sub_policies[i].ob_rms.update(ob)
-                kl_array, pol_surr_array, vf_loss_array = [], [], []
+                kl_array, pol_surr_array, vf_loss_array, entropy_array = [], [], [], []
                 for k in range(self.optim_epochs):
                     for test_batch in test_d.iterate_times(test_batchsize, num_batches):
                         feed_dict = {}
@@ -201,15 +210,17 @@ class Learner:
                         feed_dict[self.sub_atargs[i]] = test_batch['atarg']
                         feed_dict[self.sub_ret[i]] = test_batch['vtarg']
 
-                        _, kl, pol_surr, vf_loss = U.get_session().run([
+                        _, kl, pol_surr, vf_loss, entropy = U.get_session().run([
                             self.sub_train_steps[i], self.sub_kl[i], self.sub_pol_surr[i], 
-                            self.sub_vf_loss[i]], feed_dict)
+                            self.sub_vf_loss[i], self.sub_entropy[i]], feed_dict)
                         kl_array.append(kl)
                         pol_surr_array.append(pol_surr)
                         vf_loss_array.append(vf_loss)
+                        entropy_array.append(entropy)
                 print('KL div for sub %d is %g'%(i, np.mean(kl_array)))
                 print('Policy loss for sub %d is %g'%(i, np.mean(pol_surr_array)))
                 print('VF loss for sub %d is %g'%(i, np.mean(vf_loss_array)))
+                print('Entropy loss for sub %d is %g'%(i, np.mean(entropy_array)))
             """
             else:
                 # zero grad
