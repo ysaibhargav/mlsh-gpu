@@ -8,7 +8,9 @@ import pdb
 
 
 class Policy(object):
-    def __init__(self, name, ob, ac_space, hid_size, num_hid_layers, num_subpolicies, gaussian_fixed_var=True):
+    def __init__(self, name, ob, ac_space, num_subpolicies, network='mlp', gaussian_fixed_var=True):
+        hid_size=64 
+        num_hid_layers=2
         self.hid_size = hid_size
         self.num_hid_layers = num_hid_layers
         self.num_subpolicies = num_subpolicies

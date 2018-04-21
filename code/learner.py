@@ -184,6 +184,8 @@ class Learner:
 
         logger.logkv('Mean episode return', np.mean(ep_rets))
         logger.logkv('Mean episode length', np.mean(ep_lens))
+        logger.dumpkvs()
+
         logger.logkv('(M) KL', np.mean(kl_array))
         logger.logkv('(M) policy loss', np.mean(pol_surr_array))
         logger.logkv('(M) value loss', np.mean(vf_loss_array))

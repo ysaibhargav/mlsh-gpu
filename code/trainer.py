@@ -57,16 +57,16 @@ def start(callback, args):
         shape=[None] + list(ob_space.shape)) for x in range(num_subs)]
 
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
-        hid_size=32, num_hid_layers=2, num_subpolicies=num_subs) for x in 
+        num_subpolicies=num_subs, network='mlp') for x in 
         range(num_master_groups)]
     sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-        hid_size=32, num_hid_layers=2) for x in range(num_subs)]
+        network='mlp') for x in range(num_subs)]
 
     old_policies = [Policy(name="old_policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
-        hid_size=32, num_hid_layers=2, num_subpolicies=num_subs) for x in 
+        num_subpolicies=num_subs, network='mlp') for x in 
         range(num_master_groups)]
     old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-        ac_space=ac_space, hid_size=32, num_hid_layers=2) for x in range(num_subs)]
+        ac_space=ac_space, network='mlp') for x in range(num_subs)]
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, optim_epochs=10, 

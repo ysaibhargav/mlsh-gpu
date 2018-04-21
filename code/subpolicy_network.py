@@ -7,7 +7,9 @@ from running_mean_std import RunningMeanStd
 
 
 class SubPolicy(object):
-    def __init__(self, name, ob, ac_space, hid_size, num_hid_layers, gaussian_fixed_var=True):
+    def __init__(self, name, ob, ac_space, network='mlp', gaussian_fixed_var=True):
+        hid_size=64
+        num_hid_layers=2
         self.hid_size = hid_size
         self.num_hid_layers = num_hid_layers
         self.gaussian_fixed_var = gaussian_fixed_var
