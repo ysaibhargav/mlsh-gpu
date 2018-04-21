@@ -13,8 +13,8 @@ import sys
 
 class Learner:
     def __init__(self, envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, vfcoeff=1., entcoeff=0, optim_epochs=10, optim_stepsize=3e-4, 
-            optim_batchsize=64):
+            clip_param=0.2, vfcoeff=1., entcoeff=0, optim_epochs=10, master_lr=1e-3, 
+            sub_lr=3e-4, optim_batchsize=64):
         self.policies = policies
         self.sub_policies = sub_policies
         self.old_policies = old_policies
@@ -22,7 +22,6 @@ class Learner:
         self.clip_param = clip_param
         self.entcoeff = entcoeff
         self.optim_epochs = optim_epochs
-        self.optim_stepsize = optim_stepsize
         self.optim_batchsize = optim_batchsize
         self.num_master_groups = num_master_groups = len(policies)
         self.num_subpolicies = num_subpolicies = len(sub_policies)
@@ -44,7 +43,7 @@ class Learner:
         self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss, \
                 self.master_entropy, self.master_values = retvals 
 
-        master_trainers = [tf.train.AdamOptimizer(learning_rate=1e-3, 
+        master_trainers = [tf.train.AdamOptimizer(learning_rate=master_lr, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
         master_params = [policies[i].get_trainable_variables() 
                 for i in range(num_master_groups)] 
@@ -74,7 +73,7 @@ class Learner:
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
                 self.sub_entropy, self.sub_values = sub_retvals 
 
-        sub_trainers = [tf.train.AdamOptimizer(learning_rate=optim_stepsize)
+        sub_trainers = [tf.train.AdamOptimizer(learning_rate=sub_lr)
                 for _ in range(num_subpolicies)]
         sub_params = [sub_policies[i].get_trainable_variables() 
                 for i in range(num_subpolicies)] 

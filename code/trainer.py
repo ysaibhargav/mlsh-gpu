@@ -1,5 +1,4 @@
 import gym
-import test_envs
 import tensorflow as tf
 import rollouts
 from policy_network import Policy
@@ -70,7 +69,7 @@ def start(callback, args):
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, optim_epochs=10, 
-            optim_stepsize=3e-4, optim_batchsize=32)
+            master_lr=args.master_lr, sub_lr=args.sub_lr, optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
