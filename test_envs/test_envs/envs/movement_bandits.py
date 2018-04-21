@@ -9,6 +9,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 import numpy as np
+import pdb
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class MovementBandits(gym.Env):
 
         self.realgoal = np.random.randint(0,2)
 
-        self._seed()
+        self.seed()
         self.viewer = None
         self.reset()
 
@@ -33,21 +34,23 @@ class MovementBandits(gym.Env):
         self.steps_beyond_done = None
 
         # Just need to initialize the relevant attributes
-        self._configure()
+        self.configure()
 
     def randomizeCorrect(self):
         self.realgoal = self.np_random.randint(0,2)
-        # print("new goal is " + str(self.realgoal))
+        print('New goal is %d'%self.realgoal)
 
-    def _configure(self, display=None):
+    def configure(self, display=None):
         self.display = display
 
-    def _seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        print("seeded")
-        return [seed]
+    def seed(self, seed=None):
+        if hasattr(self, 'np_random'):# and seed is None:
+            self.randomizeCorrect()
+        else:
+            self.np_random, seed = seeding.np_random(seed)
+            return [seed]
 
-    def _step(self, action):
+    def step(self, action):
         if action == 1:
             self.state[0] += 20
         if action == 2:
@@ -71,7 +74,7 @@ class MovementBandits(gym.Env):
     def obs(self):
         return np.reshape(np.array([self.state] + self.goals), (-1,)) / 400
 
-    def _reset(self):
+    def reset(self):
         # self.randomizeCorrect()
         self.state = [200.0, 200.0]
         self.goals = []
@@ -83,7 +86,7 @@ class MovementBandits(gym.Env):
         # self.goals.append(np.array([100, 100]))
         return self.obs()
 
-    def _render(self, mode='human', close=False):
+    def render(self, mode='human', close=False):
         if close:
             if self.viewer is not None:
                 self.viewer.close()

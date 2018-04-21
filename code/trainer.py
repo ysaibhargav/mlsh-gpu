@@ -1,6 +1,7 @@
 import gym
 import tensorflow as tf
 import rollouts
+import test_envs
 from policy_network import Policy
 from subpolicy_network import SubPolicy
 from observation_network import Features
@@ -86,11 +87,10 @@ def start(callback, args):
         [policy.reset() for policy in policies]
         learner.reset_master_optimizer()
 
-        # TODO: randomizeCorrec() for VecEnv
-        #env.env.randomizeCorrect()
-
-        # print("It is iteration %d so i'm changing the goal to %s" % 
-        # (x, env.env.realgoal))
+        for i in range(num_master_groups):
+            seed = np.random.randint(0, 2**31-1)
+            for j in range(num_sub_in_grp):
+                envs[i].envs[j].seed(seed)
 
         # TODO: is warm-up staggering necessary?
         mini_ep = 0

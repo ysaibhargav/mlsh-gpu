@@ -82,6 +82,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
         # TODO: replay - render the environment every few steps
         if replay:
             envs[0].envs[0].render()
+            time.sleep(0.05)
 
         cur_ep_ret += rew
         cur_ep_len += 1
