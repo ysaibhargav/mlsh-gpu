@@ -16,6 +16,10 @@ export PYTHONPATH=$PYTHONPATH:/.../mlsh-gpu/rl-algs;
 python3 main.py --task [task_name] --num_subs [num_subs] --macro_duration [macro_duration] --num_rollouts [num_rollouts] --warmup_time [warmup_time] --train_time [train_time] --num_master_grp [num_master_grp] --num_sub_batches [num_sub_batches] --num_sub_in_grp [num_sub_in_grp] --vfcoeff [vfcoeff] --entcoeff [entcoeff] --replay [replay] [savename] 
 ```
 
+##### To run on AWS
+1. Upgrade pip
+2. Use the env.yml file to create a conda environment 
+
 ##### Note
 
 DEVELOPMENT IN PROGRESS - see code for pending TODOs
