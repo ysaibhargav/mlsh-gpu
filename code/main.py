@@ -31,12 +31,9 @@ import shutil
 import subprocess
 import trainer 
 import multiprocessing
+from baselines.logger import Logger, CSVOutputFormat, HumanOutputFormat
 
 # python3 main.py --task=CartPole-v0 --num_subs=1 --macro_duration=10 --num_rollouts=1000 --warmup_time=2 --train_time=190 --replay=n --num_master_grp=1 --num_sub_batches=8 --num_sub_in_grp=1 --vfcoeff=2. --entcoeff=0 cp
-
-# TODO: Pacman integration
-# TODO: num_rollouts? 
-# TODO: CNN for pacman
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -50,8 +47,7 @@ replay = str2bool(args.replay)
 args.replay = str2bool(args.replay)
 
 RELPATH = osp.join(args.savename)
-LOGDIR = osp.join('/root/results' if sys.platform.startswith('linux') 
-        else '/tmp', RELPATH)
+LOGDIR = osp.join("savedir", args.savename, 'logs')
 CKPTDIR = osp.join("savedir", args.savename, 'checkpoints')
 
 def callback(it):
@@ -78,8 +74,12 @@ def train():
 def main():
     if osp.exists(LOGDIR):
         shutil.rmtree(LOGDIR)
+    os.makedirs(LOGDIR)
     if not osp.exists(CKPTDIR):
         os.makedirs(CKPTDIR)
+    Logger.DEFAULT = Logger.CURRENT = Logger(dir=None, 
+            output_formats=[HumanOutputFormat(sys.stdout), 
+                CSVOutputFormat(osp.join(LOGDIR, 'log.csv'))])
     train()
 
 if __name__ == '__main__':
