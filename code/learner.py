@@ -116,8 +116,8 @@ class Learner:
         total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
         div_loss = None
         if logpacs is not None:
-            div_loss = tf.reduce_sum(tf.reduce_mean(tf.square(pi.pd.logp(ac)-logpacs), 
-                axis=1))
+            div_loss = tf.reduce_sum(tf.reduce_mean(tf.square(pi.pd.logp(ac)-
+                tf.clip_by_value(logpacs, -20, 20)), axis=1))
             total_loss -= divcoeff*div_loss
         return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred, div_loss
 
