@@ -102,22 +102,24 @@ class Learner:
         
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., 
             entcoeff=0, divcoeff=0., logpacs=None):
+        LOGP_MAX = 20
+        KL_MAX = 2
         entropy = tf.reduce_mean(pi.pd.entropy())
-        ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
+        ratio = tf.exp(pi.pd.logp(ac) - U.clip(oldpi.pd.logp(ac), -LOGP_MAX, LOGP_MAX)) 
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
         surr1 = ratio * atarg
         surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
         pol_surr = -U.mean(tf.minimum(surr1, surr2))
         vfloss1 = tf.square(pi.vpred - ret)
-        vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, 
+        vpredclipped = oldpi.vpred + U.clip(pi.vpred - oldpi.vpred, -clip_param, 
                 clip_param)
         vfloss2 = tf.square(vpredclipped - ret)
         vf_loss = U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
         div_loss = None
         if logpacs is not None:
-            div_loss = tf.reduce_sum(tf.reduce_mean(tf.square(pi.pd.logp(ac)-
-                tf.clip_by_value(logpacs, -20, 20)), axis=1))
+            div_loss = tf.reduce_sum(U.clip(tf.reduce_mean(tf.square(pi.pd.logp(ac)-
+                U.clip(logpacs, -LOGP_MAX, LOGP_MAX)), axis=1), 0, KL_MAX))
             total_loss -= divcoeff*div_loss
         return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred, div_loss
 
