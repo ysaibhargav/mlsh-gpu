@@ -21,7 +21,7 @@ python3 main.py --task [task_name] --num_subs [num_subs] --macro_duration [macro
 2. Do `source activate tensorflow_p36`
 3. Upgrade pip, do `pip install --upgrade pip`
 4. Do `git clone https://github.com/ysaibhargav/mlsh-gpu.git`
-5. Do `export PYTHONPATH=$PYTHONPATH:/home/ubuntu/mlsh-gpu/rl-algs;`
+5. Do `export PYTHONPATH=$PYTHONPATH:/home/ubuntu/mlsh-gpu/rl-algs:/home/ubuntu/mlsh-gpu/test_envs;`
 6. Use the env.yml file to create a conda environment, do `conda env create -f mlsh-gpu/env.yml` 
 7. Do `conda activate mlsh_p36`
 8. At the time of writing this document, the class `DummyVecEnv` is used from the GitHub repo for the `baselines` package which is not yet released. We therefore install from source. Do `pip uninstall baselines`.

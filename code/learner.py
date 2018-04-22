@@ -13,8 +13,8 @@ import sys
 
 class Learner:
     def __init__(self, envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, vfcoeff=1., entcoeff=0, optim_epochs=10, master_lr=1e-3, 
-            sub_lr=3e-4, optim_batchsize=64):
+            clip_param=0.2, vfcoeff=1., entcoeff=0, divcoeff=0., optim_epochs=10, 
+            master_lr=1e-3, sub_lr=3e-4, optim_batchsize=64):
         self.policies = policies
         self.sub_policies = sub_policies
         self.old_policies = old_policies
@@ -41,7 +41,7 @@ class Learner:
             self.master_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
             for i in range(num_master_groups)])
         self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss, \
-                self.master_entropy, self.master_values = retvals 
+                self.master_entropy, self.master_values, _ = retvals 
 
         master_trainers = [tf.train.AdamOptimizer(learning_rate=master_lr, 
             name='master_adam_%i'%_) for _ in range(num_master_groups)]
@@ -66,12 +66,14 @@ class Learner:
                 for _ in range(num_subpolicies)]
         self.sub_ret = [tf.placeholder(dtype=tf.float32, shape=[None])
                 for _ in range(num_subpolicies)]
+        self.logpacs = [tf.placeholder(dtype=tf.float32, shape=[num_subpolicies, None])
+                for _ in range(num_subpolicies)]
         sub_retvals = zip(*[self.policy_loss(sub_policies[i], 
             old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
-            self.sub_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
-            for i in range(num_subpolicies)])
+            self.sub_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff, 
+            divcoeff=divcoeff, logpacs=self.logpacs[i]) for i in range(num_subpolicies)])
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
-                self.sub_entropy, self.sub_values = sub_retvals 
+                self.sub_entropy, self.sub_values, self.div_loss = sub_retvals 
 
         sub_trainers = [tf.train.AdamOptimizer(learning_rate=sub_lr)
                 for _ in range(num_subpolicies)]
@@ -98,7 +100,8 @@ class Learner:
                     if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
-    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., entcoeff=0):
+    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., 
+            entcoeff=0, divcoeff=0., logpacs=None):
         entropy = tf.reduce_mean(pi.pd.entropy())
         ratio = tf.exp(pi.pd.logp(ac) - tf.clip_by_value(oldpi.pd.logp(ac), -20, 20)) 
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
@@ -111,7 +114,12 @@ class Learner:
         vfloss2 = tf.square(vpredclipped - ret)
         vf_loss = U.mean(tf.maximum(vfloss1, vfloss2))
         total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
-        return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred
+        div_loss = None
+        if logpacs is not None:
+            div_loss = tf.reduce_sum(tf.reduce_mean(tf.square(pi.pd.logp(ac)-logpacs), 
+                axis=1))
+            total_loss -= divcoeff*div_loss
+        return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred, div_loss
 
 
     # TODO: explained variance
@@ -170,12 +178,6 @@ class Learner:
                 pol_surr_array.append(pol_surr)
                 vf_loss_array.append(vf_loss)
                 entropy_array.append(entropy)
-        """
-        print('KL div for master is %g'%np.mean(kl_array))
-        print('Policy loss for master is %g'%np.mean(pol_surr_array))
-        print('VF loss for master is %g'%np.mean(vf_loss_array))
-        print('Entropy loss for master is %g'%np.mean(entropy_array))
-        """
 
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
@@ -204,13 +206,17 @@ class Learner:
             test_seg = test_segs[i]
             ob, ac, atarg, tdlamret = test_seg["ob"], test_seg["ac"], test_seg["adv"], \
                     test_seg["tdlamret"]
+            logpacs = [U.get_session().run(pi.pd.logp(test_seg['ac']), 
+                {self.sub_obs[j]: test_seg['ob']}) for j, pi in enumerate(self.sub_policies)]
+            logpacs = np.array(logpacs).transpose()
+
             if np.shape(ob)[0] < 1:
                 is_optimizing = False
             else:
                 atarg = np.array(atarg, dtype='float32')
                 atarg = (atarg - atarg.mean()) / max(atarg.std(), 0.000001)
-            test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), 
-                    shuffle=True)
+            test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret, 
+                logpacs=logpacs), shuffle=True)
             test_batchsize = int(ob.shape[0] / num_batches)
 
             optimizable.append(is_optimizing)
@@ -236,12 +242,12 @@ class Learner:
                             feed_dict[batch_num][self.sub_acs[i]] = test_batch['ac']
                             feed_dict[batch_num][self.sub_atargs[i]] = test_batch['atarg']
                             feed_dict[batch_num][self.sub_ret[i]] = test_batch['vtarg']
+                            feed_dict[batch_num][self.logpacs[i]] = test_batch['logpacs'].transpose()
                             batch_num += 1
 
                 return feed_dict
 
-            kl_array, pol_surr_array, vf_loss_array, entropy_array = [[[] for _ in 
-                range(self.num_subpolicies)] for _ in range(4)]
+            kl_array, pol_surr_array, vf_loss_array, entropy_array, div_array = [[[] for _ in range(self.num_subpolicies)] for _ in range(5)]
             for _ in range(self.optim_epochs):
                 feed_dict = make_feed_dict()
                 for _dict in feed_dict:
@@ -251,32 +257,28 @@ class Learner:
                     pol_surr = ix_(self.sub_pol_surr, valid_idx)  
                     vf_loss = ix_(self.sub_vf_loss, valid_idx)  
                     entropy = ix_(self.sub_entropy, valid_idx)  
+                    div_loss = ix_(self.div_loss, valid_idx)
                     
                     keys = list(_dict.keys())
                     for key in keys:
                         if isinstance(key, int):
                             del _dict[key]
 
-                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy = U.get_session().run([
-                        train_steps, kl, pol_surr, vf_loss, entropy], _dict)
+                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = U.get_session().run([train_steps, kl, pol_surr, vf_loss, entropy, div_loss], _dict)
 
                     ix_append_(kl_array, sub_kl, valid_idx)
                     ix_append_(pol_surr_array, sub_pol_surr, valid_idx)
                     ix_append_(vf_loss_array, sub_vf_loss, valid_idx)
                     ix_append_(entropy_array, sub_entropy, valid_idx)
+                    ix_append_(div_array, sub_div_loss, valid_idx)
 
             for i in range(self.num_subpolicies):
                 logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
                 logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
                 logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
                 logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
+                logger.logkv('(S%d) diversity loss'%i, np.mean(div_array[i]))
                 logger.dumpkvs()
-                """
-                print('KL div for sub %d is %g'%(i, np.mean(kl_array[i])))
-                print('Policy loss for sub %d is %g'%(i, np.mean(pol_surr_array[i])))
-                print('VF loss for sub %d is %g'%(i, np.mean(vf_loss_array[i])))
-                print('Entropy loss for sub %d is %g'%(i, np.mean(entropy_array[i])))
-                """
 
 
 def flatten_lists(listoflists):

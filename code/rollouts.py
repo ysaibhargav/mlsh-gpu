@@ -98,7 +98,6 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     new[i][j] = False
         t += 1
 
-# TODO: why is new[t+1] used? 
 def add_advantage_macro(seg, macrolen, gamma, lam):
     group_shape = list(seg["new"][0].shape)
     new = np.append(seg["new"][0::macrolen], np.zeros(group_shape, dtype='int32')) 
@@ -117,6 +116,7 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
     seg["macro_tdlamret"] = seg["macro_adv"] + seg["macro_vpred"]
     seg["macro_ob"] = seg["ob"][0::macrolen]
 
+# TODO: terminal states logic for the subpolicies
 def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
     test_seg = allrolls[0]
     group_shape = list(test_seg["new"][0].shape)
@@ -129,7 +129,6 @@ def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
     lastgaelam = np.zeros(group_shape, dtype='float32') 
     for t in reversed(range(T)):
         nonterminal = 1-new[t+1]
-        #currentnonterminal = 1-new[t]
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
         currentnonterminal = 1-new[t]
         delta = currentnonterminal * delta

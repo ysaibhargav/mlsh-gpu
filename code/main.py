@@ -12,6 +12,7 @@ parser.add_argument('--num_sub_batches', type=int)
 parser.add_argument('--num_sub_in_grp', type=int)
 parser.add_argument('--vfcoeff', type=float)
 parser.add_argument('--entcoeff', type=float)
+parser.add_argument('--divcoeff', type=float)
 parser.add_argument('--master_lr', type=float)
 parser.add_argument('--sub_lr', type=float)
 parser.add_argument('--train_time', type=int)
@@ -53,7 +54,7 @@ LOGDIR = osp.join("savedir", args.savename, 'logs')
 CKPTDIR = osp.join("savedir", args.savename, 'checkpoints')
 
 def callback(it):
-    if it % 3 == 0 and it > 3 and not replay:
+    if it % 5 == 0 and it > 3 and not replay:
         fname = osp.join(CKPTDIR, '%.5i'%it)
         U.save_state(fname)
     if args.continue_iter is not None and int(args.continue_iter)+1 == it:

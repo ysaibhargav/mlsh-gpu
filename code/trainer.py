@@ -41,6 +41,8 @@ def start(callback, args):
                 os.makedirs(MONITORDIR)
             monitor_path = osp.join(MONITORDIR, '%s-%d'%(args.task, seed))
             env = bench.Monitor(env, monitor_path, allow_early_resets=True)
+            #env = gym.wrappers.Monitor(env, MONITORDIR, force=True, 
+            #        video_callable=lambda episode_id: True)
             if 'Atari' in str(env.__dict__['env']):
                 env = wrap_deepmind(env, frame_stack=True)
             return env
@@ -69,8 +71,8 @@ def start(callback, args):
         ac_space=ac_space, network='mlp') for x in range(num_subs)]
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, optim_epochs=10, 
-            master_lr=args.master_lr, sub_lr=args.sub_lr, optim_batchsize=32)
+            clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, divcoeff=args.divcoeff,
+            optim_epochs=10, master_lr=args.master_lr, sub_lr=args.sub_lr, optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
