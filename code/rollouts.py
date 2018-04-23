@@ -14,6 +14,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     ac = [[envs[0].action_space.sample() for _ in range(num_sub_in_grp)] for env in envs]
     ac = np.array(ac, dtype='int32')
     vpred = np.zeros([num_master_groups, num_sub_in_grp], dtype='float32')
+    vpred2 = np.zeros([num_master_groups, num_sub_in_grp], dtype='float32')
     new = [[False for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)] 
     rew = [[0.0 for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)] 
     # ob - num_master_groups * num_sub_in_grp * state_dims
@@ -29,6 +30,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     obs = np.array([ob for _ in range(horizon)])
     rews = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'float32')
     vpreds = np.zeros([horizon, num_master_groups, num_sub_in_grp], 'float32')
+    vpreds2 = np.zeros([horizon//macrolen, num_master_groups, num_sub_in_grp], 'float32')
     new = [[False for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
     new = np.array(new)
     news = np.array([new for _ in range(horizon)])
@@ -36,9 +38,13 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     macro_acs = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'int32')
     macro_vpreds = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'float32')
 
+    prev_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
+    cur_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
+    
     while True:
         if t % macrolen == 0:
             # cur_subpolicy - num_master_groups * num_sub_in_grp
+            prev_subpolicy = cur_subpolicy
             cur_subpolicy, macro_vpred = zip(*[policy.act(stochastic, ob[i]) 
                 for i, policy in enumerate(policies)])
 
@@ -52,8 +58,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                         for _ in range(num_master_groups)]
 
         if t > 0 and t % horizon == 0:
-            dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news, 
-                    "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
+            dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "vpred2": vpreds2, 
+                    "new" : news, "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
                     "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
@@ -66,6 +72,10 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             for j in range(num_sub_in_grp):
                 ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
                         [ob[i][j]])
+                k = t % horizon
+                if k % macrolen == 0:
+                    _, vpreds2[k//macrolen][i][j] = sub_policies[prev_subpolicy[i][j]].act(
+                            stochastic, [ob[i][j]])
 
         i = t % horizon
         obs[i] = ob
@@ -123,13 +133,15 @@ def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
     # calculate advantages
     new = np.append(test_seg["new"], np.zeros(group_shape, dtype='int32')) 
     vpred = np.append(test_seg["vpred"], np.zeros(group_shape, dtype='float32')) 
+    vpred2 = np.append(test_seg["vpred2"], np.zeros(group_shape, dtype='float32')) 
     T = len(test_seg["rew"])
     test_seg["adv"] = gaelam = np.empty([T]+group_shape, 'float32')
     rew = test_seg["rew"]
     lastgaelam = np.zeros(group_shape, dtype='float32') 
     for t in reversed(range(T)):
+        target_vpred = vpred2[(t+1)//macrolen] if (t+1)%macrolen == 0 else vpred[t+1]
         nonterminal = 1-new[t+1]
-        delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
+        delta = rew[t] + gamma * target_vpred * nonterminal - vpred[t]
         currentnonterminal = 1-new[t]
         delta = currentnonterminal * delta
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
