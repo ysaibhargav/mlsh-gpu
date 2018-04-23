@@ -103,7 +103,7 @@ class Learner:
     def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., 
             entcoeff=0, divcoeff=0., logpacs=None):
         LOGP_MAX = 20
-        KL_MAX = 2
+        KL_MAX = 5
         entropy = tf.reduce_mean(pi.pd.entropy())
         ratio = tf.exp(pi.pd.logp(ac) - U.clip(oldpi.pd.logp(ac), -LOGP_MAX, LOGP_MAX)) 
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
