@@ -54,7 +54,7 @@ LOGDIR = osp.join("savedir", args.savename, 'logs')
 CKPTDIR = osp.join("savedir", args.savename, 'checkpoints')
 
 def callback(it):
-    if it % 5 == 0 and it > 3 and not replay:
+    if it % 3 == 0 and it > 1 and not replay:
         fname = osp.join(CKPTDIR, '%.5i'%it)
         U.save_state(fname)
     if args.continue_iter is not None and int(args.continue_iter)+1 == it:

@@ -52,6 +52,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                 for j in range(num_sub_in_grp):
                     if np.random.uniform() < EPS:
                         cur_subpolicy[i][j] = np.random.randint(0, len(sub_policies))
+                    #cur_subpolicy[i][j] = envs[i].envs[j].env.env.realgoal
 
             if args.force_subpolicy is not None:
                 cur_subpolicy = [[args.force_subpolicy for _ in range(num_sub_in_grp)]
@@ -73,7 +74,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                 ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
                         [ob[i][j]])
                 k = t % horizon
-                if k % macrolen == 0:
+                if k % macrolen == 0 and k//macrolen != horizon//macrolen:
                     _, vpreds2[k//macrolen][i][j] = sub_policies[prev_subpolicy[i][j]].act(
                             stochastic, [ob[i][j]])
 
@@ -91,6 +92,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
 
         # TODO: replay - render the environment every few steps
         if replay:
+            if t % macrolen == 0:
+                print(cur_subpolicy)
             envs[0].envs[0].render()
             time.sleep(0.05)
 
