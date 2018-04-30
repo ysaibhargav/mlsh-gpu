@@ -8,6 +8,7 @@ GPU implementation of [Meta-Learning Shared Hierarchies](https://s3-us-west-2.am
 ```
 Add the following to your .bash_profile (replace ... with path to directory) and source it:
 export PYTHONPATH=$PYTHONPATH:/.../mlsh-gpu/rl-algs;
+export PYTHONPATH=$PYTHONPATH:/.../mlsh-gpu/test_envs;
 ```
 
 ##### How to run

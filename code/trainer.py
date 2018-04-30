@@ -1,13 +1,14 @@
 import gym
+import gym_pacman
 import tensorflow as tf
 import rollouts
 import test_envs
 from policy_network import Policy
 from subpolicy_network import SubPolicy
-from observation_network import Features
 from learner import Learner
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.atari_wrappers import wrap_deepmind
 from baselines import bench, logger
 import rl_algs.common.tf_util as U
@@ -46,6 +47,7 @@ def start(callback, args):
             if 'Atari' in str(env.__dict__['env']):
                 env = wrap_deepmind(env, frame_stack=True)
             return env
+        # TODO: DummyVecEnv does implicit reset - how to handle this?
         return DummyVecEnv([make_env for _ in range(num_sub_in_grp)])
 
     envs = [make_env_vec(np.random.randint(0, 2**31-1)) for _ in range(num_master_groups)]
@@ -71,8 +73,9 @@ def start(callback, args):
         ac_space=ac_space, network='mlp') for x in range(num_subs)]
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
-            clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, divcoeff=args.divcoeff,
-            optim_epochs=10, master_lr=args.master_lr, sub_lr=args.sub_lr, optim_batchsize=32)
+            clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, 
+            divcoeff=args.divcoeff, optim_epochs=10, master_lr=args.master_lr, 
+            sub_lr=args.sub_lr, optim_batchsize=32)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 

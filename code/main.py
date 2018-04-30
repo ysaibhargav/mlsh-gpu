@@ -36,7 +36,7 @@ import trainer
 import multiprocessing
 from baselines.logger import Logger, CSVOutputFormat, HumanOutputFormat
 
-# python3 main.py --task=CartPole-v0 --num_subs=1 --macro_duration=10 --num_rollouts=1000 --warmup_time=2 --train_time=190 --replay=n --num_master_grp=1 --num_sub_batches=8 --num_sub_in_grp=1 --vfcoeff=2. --entcoeff=0 cp
+# python3 main.py --task=MovementBandits-v0 --num_subs=2 --macro_duration=10 --num_rollouts=2000 --warmup_time=9 --train_time=1 --num_master_grp=4 --num_sub_batches=15 --num_sub_in_grp=1 --vfcoeff=.5 --entcoeff=0 --master_lr=1e-2 --sub_lr=3e-4 --replay=n --divcoeff=0 test
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -54,7 +54,7 @@ LOGDIR = osp.join("savedir", args.savename, 'logs')
 CKPTDIR = osp.join("savedir", args.savename, 'checkpoints')
 
 def callback(it):
-    if it % 5 == 0 and it > 3 and not replay:
+    if it % 3 == 0 and it > 1 and not replay:
         fname = osp.join(CKPTDIR, '%.5i'%it)
         U.save_state(fname)
     if args.continue_iter is not None and int(args.continue_iter)+1 == it:
