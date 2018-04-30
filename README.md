@@ -2,6 +2,7 @@
 
 GPU implementation of [Meta-Learning Shared Hierarchies](https://s3-us-west-2.amazonaws.com/openai-assets/MLSH/mlsh_paper.pdf), based on [OpenAI's MPI based implementation](https://github.com/openai/mlsh)
 
+This branch is non-experimental. It was created as an attempt to replicate the OpenAI implementation only.
 
 ##### Installation
 
