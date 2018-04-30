@@ -5,10 +5,10 @@ import rollouts
 import test_envs
 from policy_network import Policy
 from subpolicy_network import SubPolicy
-from observation_network import Features
 from learner import Learner
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.atari_wrappers import wrap_deepmind
 from baselines import bench, logger
 import rl_algs.common.tf_util as U
