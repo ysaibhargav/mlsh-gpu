@@ -60,6 +60,8 @@ class SubPolicy(object):
 
     def __init__(self, name, ob, ac_space, network='mlp', gaussian_fixed_var=True, 
             horizon=None, num_env=None, states=None, mask=None):
+        self.network = network
+
         shape = []
         for d in range(1, len(ob.shape)):
             shape.append(ob.shape[d])
@@ -90,10 +92,16 @@ class SubPolicy(object):
         # sample actions
         stochastic = tf.placeholder(dtype=tf.bool, shape=())
         ac = U.switch(stochastic, self.pd.sample(), self.pd.mode())
-        self._act = U.function([stochastic, ob], [ac, self.vpred])
+        if network == 'mlp':
+            self._act = U.function([stochastic, ob], [ac, self.vpred])
+        elif network == 'lstm':
+            self._act = U.function([stochastic, ob, states, mask], [ac, self.vpred])
 
-    def act(self, stochastic, ob):
-        ac1, vpred1 = self._act(stochastic, ob)#ob[None])
+    def act(self, stochastic, ob, states=None, mask=None):
+        if self.network == 'mlp':
+            ac1, vpred1 = self._act(stochastic, ob)
+        elif self.network == 'lstm':
+            ac1, vpred1 = self._act(stochastic, ob, states, mask)
         return ac1, vpred1
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.VARIABLES, self.scope)
