@@ -5,6 +5,8 @@ import pdb
 
 def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon, 
         num_sub_in_grp, stochastic, args):
+    recurrent = args.network == 'lstm'
+
     EPS = 0.1
 
     num_master_groups = len(policies)
@@ -38,16 +40,27 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     macro_acs = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'int32')
     macro_vpreds = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'float32')
 
+    if recurrent:
+        state = np.zeros([num_master_groups, num_sub_in_grp, len(sub_policies), 2*256], 
+                dtype='float32')
+        """
+        states_tracker = np.array([state for _ in range(horizon)])
+        states = np.zeros([horizon, num_master_groups, num_sub_in_grp, 2*256], 
+                dtype='float32')
+        """
+
     prev_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
     cur_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
     
     while True:
         if t % macrolen == 0:
             # cur_subpolicy - num_master_groups * num_sub_in_grp
+            # macro action selection
             prev_subpolicy = cur_subpolicy
             cur_subpolicy, macro_vpred = zip(*[policy.act(stochastic, ob[i]) 
                 for i, policy in enumerate(policies)])
 
+            # off policy-ness
             for i in range(num_master_groups):
                 for j in range(num_sub_in_grp):
                     if np.random.uniform() < EPS:
@@ -62,6 +75,10 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "vpred2": vpreds2, 
                     "new" : news, "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
                     "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
+            """
+            if recurrent:
+                dicti["state": states]
+            """
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
             ep_lens = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
@@ -69,20 +86,55 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             cur_ep_len = np.zeros([num_master_groups, num_sub_in_grp], dtype='int32')
 
         # TODO: vectorize this
+        # interaction with environment
         for i in range(num_master_groups):
             for j in range(num_sub_in_grp):
-                ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
-                        [ob[i][j]])
+                if not recurrent:
+                    ac[i][j], vpred[i][j] = sub_policies[cur_subpolicy[i][j]].act(stochastic, 
+                            [ob[i][j]])
+                else:
+                    """
+                    ac[i][j], vpred[i][j], state[i][j][cur_subpolicy[i][j]] = \
+                            sub_policies[cur_subpolicy[i][j]].act(stochastic, [ob[i][j]], 
+                            [state[i][j]][cur_subpolicy[i][j]])
+                    """
+                    for k, sub_policy in enumerate(sub_policies):
+                        _ac, _vpred, _state = sub_policy.act(stochastic, [ob[i][j]], 
+                                [state[i][j][k]], [int(new[i][j])]) 
+                        state[i][j][k] = _state[0]
+                        if k == cur_subpolicy[i][j]: 
+                            ac[i][j] = _ac
+                            vpred[i][j] = _vpred
+                        l = t % horizon
+                        if l % macrolen == 0 and prev_subpolicy[i][j] == k:
+                            vpreds2[l//macrolen][i][j] = _vpred
+
                 k = t % horizon
-                if k % macrolen == 0 and k//macrolen != horizon//macrolen:
-                    _, vpreds2[k//macrolen][i][j] = sub_policies[prev_subpolicy[i][j]].act(
-                            stochastic, [ob[i][j]])
+                if k % macrolen == 0:# and k//macrolen != horizon//macrolen:
+                    if not recurrent:
+                        _, vpreds2[k//macrolen][i][j] = \
+                                sub_policies[prev_subpolicy[i][j]].act(stochastic, [ob[i][j]])
+                    """
+                    else:
+                        _, vpreds2[k//macrolen][i][j], _ = \
+                                sub_policies[prev_subpolicy[i][j]].act(stochastic, 
+                                        [ob[i][j]], [state[i][j][prev_subpolicy[i][j]]], 
+                                        [int(new[i][j])])
+                    """
 
         i = t % horizon
-        obs[i] = ob
-        vpreds[i] = vpred
-        news[i] = new
-        acs[i] = ac
+        obs[i] = ob # current observation (t)
+        vpreds[i] = vpred # current state's (t)  baseline
+        news[i] = new # done (t-1 -> t transition)
+        acs[i] = ac # current action (t)
+        """
+        if recurrent:
+            _state = np.zeros([num_master_groups, num_sub_in_grp, 2*256])
+            for j in range(num_master_groups):
+                for k in range(num_sub_in_grp):
+                    _state[j][k] = state[j][k][cur_subpolicy[j][k]]
+            states[i] = _state
+        """
         if t % macrolen == 0:
             macro_acs[int(i/macrolen)] = cur_subpolicy
             macro_vpreds[int(i/macrolen)] = macro_vpred
@@ -100,6 +152,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
         cur_ep_ret += rew
         cur_ep_len += 1
         new = np.logical_or(new, _new) 
+        # resets
         for i in range(num_master_groups):
             for j in range(num_sub_in_grp):
                 if new[i][j] and ((t+1) % macrolen == 0):
@@ -124,13 +177,13 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
         nonterminal = 1-new[t+1]
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
         currentnonterminal = 1-new[t]
-        delta = currentnonterminal * delta
+        #delta = currentnonterminal * delta
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     seg["macro_tdlamret"] = seg["macro_adv"] + seg["macro_vpred"]
     seg["macro_ob"] = seg["ob"][0::macrolen]
 
 # TODO: terminal states logic for the subpolicies
-def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
+def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies, recurrent=False):
     test_seg = allrolls[0]
     group_shape = list(test_seg["new"][0].shape)
     # calculate advantages
@@ -146,15 +199,15 @@ def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies):
         nonterminal = 1-new[t+1]
         delta = rew[t] + gamma * target_vpred * nonterminal - vpred[t]
         currentnonterminal = 1-new[t]
-        delta = currentnonterminal * delta
+        #delta = currentnonterminal * delta
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     test_seg["tdlamret"] = test_seg["adv"] + test_seg["vpred"]
 
-    split_test = split_segments(test_seg, macrolen, num_subpolicies)
+    split_test = split_segments(test_seg, macrolen, num_subpolicies, recurrent=recurrent)
     return split_test
 
 # TODO: make parallel
-def split_segments(seg, macrolen, num_subpolicies):
+def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
     group_shape = seg["new"][0].shape
     num_master_groups, num_sub_in_grp = group_shape
     subpol_counts = np.zeros([num_subpolicies], dtype='int32')
@@ -169,7 +222,12 @@ def split_segments(seg, macrolen, num_subpolicies):
         tdlams = np.zeros(subpol_counts[i], 'float32')
         news = np.zeros(subpol_counts[i], 'int32')
         acs = np.array([seg["ac"][0][0][0] for _ in range(subpol_counts[i])])
-        subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, "new": news})
+        subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, "new": news}) 
+        """
+        if recurrent:
+            states = np.array([seg["state"][0][0][0] for _ in range(subpol_counts[i])])
+            subpols[-1]["state"] = states
+        """
     subpol_counts = []
     for i in range(num_subpolicies):
         subpol_counts.append(0)
@@ -182,5 +240,9 @@ def split_segments(seg, macrolen, num_subpolicies):
                 subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
                 subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
                 subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
+                """
+                if recurrent:
+                    subpols[mac]["state"][subpol_counts[mac]] = seg["state"][i][j][k]
+                """
                 subpol_counts[mac] += 1
     return subpols

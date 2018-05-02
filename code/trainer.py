@@ -32,6 +32,8 @@ def start(callback, args):
     # number of sub groups in each group
     num_sub_in_grp = args.num_sub_in_grp
 
+    recurrent = args.network == 'lstm'
+
     def make_env_vec(seed):
         # common random numbers in sub groups
         def make_env():
@@ -47,7 +49,7 @@ def start(callback, args):
             if 'Atari' in str(env.__dict__['env']):
                 env = wrap_deepmind(env, frame_stack=True)
             return env
-        # TODO: DummyVecEnv does implicit reset - how to handle this?
+        # TODO: replace DummyVecEnv with multiprocessing based class 
         return DummyVecEnv([make_env for _ in range(num_sub_in_grp)])
 
     envs = [make_env_vec(np.random.randint(0, 2**31-1)) for _ in range(num_master_groups)]
@@ -63,14 +65,30 @@ def start(callback, args):
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         num_subpolicies=num_subs, network='mlp') for x in 
         range(num_master_groups)]
-    sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-        network='mlp') for x in range(num_subs)]
-
     old_policies = [Policy(name="old_policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         num_subpolicies=num_subs, network='mlp') for x in 
         range(num_master_groups)]
-    old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-        ac_space=ac_space, network='mlp') for x in range(num_subs)]
+
+    if not recurrent:
+        sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
+            network='mlp') for x in range(num_subs)]
+        old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
+            ac_space=ac_space, network='mlp') for x in range(num_subs)]
+    elif recurrent:
+        num_env = num_master_groups * num_sub_in_grp 
+
+        sub_states = [U.get_placeholder(name="states_%i"%x, dtype=tf.float32, 
+            shape=[num_env, 2*256]) for x in range(num_subs)]
+        sub_masks = [U.get_placeholder(name="masks_%i"%x, dtype=tf.float32, 
+            shape=[macro_duration*num_env]) for x in range(num_subs)]
+
+        sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
+            network='lstm', horizon=macro_duration, num_env=num_env, states=sub_states[x], 
+            masks=sub_masks[x]) for x in range(num_subs)]
+        old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
+            ac_space=ac_space, network='lstm', horizon=macro_duration, num_env=num_env, 
+            states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
+
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, 
@@ -116,6 +134,6 @@ def start(callback, args):
             learner.updateMasterPolicy(rolls)
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
-                    num_subpolicies=num_subs)
+                    num_subpolicies=num_subs, recurrent=recurrent)
             learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
             mini_ep += 1

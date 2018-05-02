@@ -3,6 +3,7 @@ import tensorflow as tf
 parser = argparse.ArgumentParser()
 parser.add_argument('savename', type=str)
 parser.add_argument('--task', type=str)
+parser.add_argument('--network', type=str)
 parser.add_argument('--num_subs', type=int)
 parser.add_argument('--macro_duration', type=int)
 parser.add_argument('--num_rollouts', type=int)

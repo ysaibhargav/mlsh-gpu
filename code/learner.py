@@ -244,12 +244,14 @@ class Learner:
                             feed_dict[batch_num][self.sub_acs[i]] = test_batch['ac']
                             feed_dict[batch_num][self.sub_atargs[i]] = test_batch['atarg']
                             feed_dict[batch_num][self.sub_ret[i]] = test_batch['vtarg']
-                            feed_dict[batch_num][self.logpacs[i]] = test_batch['logpacs'].transpose()
+                            feed_dict[batch_num][self.logpacs[i]] = \
+                                    test_batch['logpacs'].transpose()
                             batch_num += 1
 
                 return feed_dict
 
-            kl_array, pol_surr_array, vf_loss_array, entropy_array, div_array = [[[] for _ in range(self.num_subpolicies)] for _ in range(5)]
+            kl_array, pol_surr_array, vf_loss_array, entropy_array, div_array = [[[] for _ 
+                in range(self.num_subpolicies)] for _ in range(5)]
             for _ in range(self.optim_epochs):
                 feed_dict = make_feed_dict()
                 for _dict in feed_dict:
@@ -266,7 +268,9 @@ class Learner:
                         if isinstance(key, int):
                             del _dict[key]
 
-                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = U.get_session().run([train_steps, kl, pol_surr, vf_loss, entropy, div_loss], _dict)
+                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = \
+                            U.get_session().run([train_steps, kl, pol_surr, vf_loss, 
+                                entropy, div_loss], _dict)
 
                     ix_append_(kl_array, sub_kl, valid_idx)
                     ix_append_(pol_surr_array, sub_pol_surr, valid_idx)

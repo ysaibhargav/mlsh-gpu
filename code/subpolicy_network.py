@@ -36,10 +36,10 @@ class SubPolicy(object):
                     U.normc_initializer(0.01))
         self.pd = pdtype.pdfromflat(self.pdparam)
 
-    def _lstm(self, obs, states, mask, nlstm, ac_space, horizon, num_env):
+    def _lstm(self, obs, states, masks, nlstm, ac_space, horizon, num_env):
         # obs: T * ob_shape 
-        # states: T * (2xnlstm) 
-        # mask: T
+        # states: num_env * (2xnlstm) 
+        # masks: T
         T = horizon * num_env
         nh, nw, nc = obs.shape[1:]
         ob_shape = [T, nh, nw, nc]
@@ -47,7 +47,7 @@ class SubPolicy(object):
         with tf.variable_scope('lstm'):
             h = nature_cnn(obs)
             xs = batch_to_seq(h, num_env, horizon)
-            ms = batch_to_seq(mask, num_env, horizon)
+            ms = batch_to_seq(masks, num_env, horizon)
             h5, snew = lstm(xs, ms, states, 'lstm1', nh=nlstm)
             h5 = seq_to_batch(h5)
             pi = fc(h5, 'pi', nact)
@@ -56,10 +56,12 @@ class SubPolicy(object):
         self.vpred = vf[:, 0]
 
         self.pdtype = pdtype = make_pdtype(ac_space)
-        self.pd = pdtype.pdfromflat(self.pdparam)
+        self.pd = pdtype.pdfromflat(pi)
+
+        self.snew = snew
 
     def __init__(self, name, ob, ac_space, network='mlp', gaussian_fixed_var=True, 
-            horizon=None, num_env=None, states=None, mask=None):
+            horizon=None, num_env=None, states=None, masks=None):
         self.network = network
 
         shape = []
@@ -82,11 +84,11 @@ class SubPolicy(object):
                 self._mlp(obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var)
             elif network == 'lstm':
                 assert horizon is not None and num_env is not None
-                assert states is not None and mask is not None
+                assert states is not None and masks is not None
                 assert isinstance(horizon, int) and isinstance(num_env, int)
                 assert horizon > 0 and num_env > 0
                 self.nlstm = nlstm = 256
-                self._lstm(obs, states, mask, nlstm, ac_space, horizon, num_env)
+                self._lstm(obs, states, masks, nlstm, ac_space, horizon, num_env)
 
 
         # sample actions
@@ -95,14 +97,16 @@ class SubPolicy(object):
         if network == 'mlp':
             self._act = U.function([stochastic, ob], [ac, self.vpred])
         elif network == 'lstm':
-            self._act = U.function([stochastic, ob, states, mask], [ac, self.vpred])
+            self._act = U.function([stochastic, ob, states, masks], 
+                    [ac, self.vpred, self.snew])
 
-    def act(self, stochastic, ob, states=None, mask=None):
+    def act(self, stochastic, ob, states=None, masks=None):
         if self.network == 'mlp':
             ac1, vpred1 = self._act(stochastic, ob)
+            return ac1, vpred1
         elif self.network == 'lstm':
-            ac1, vpred1 = self._act(stochastic, ob, states, mask)
-        return ac1, vpred1
+            ac1, vpred1, snew = self._act(stochastic, ob, states, masks)
+            return ac1, vpred1, snew
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.VARIABLES, self.scope)
     def get_trainable_variables(self):
