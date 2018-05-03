@@ -1,6 +1,7 @@
 # Meta-Learning Shared Hierarchies
 
 GPU implementation of [Meta-Learning Shared Hierarchies](https://s3-us-west-2.amazonaws.com/openai-assets/MLSH/mlsh_paper.pdf), based on [OpenAI's MPI based implementation](https://github.com/openai/mlsh)
+
 Also supports recurrent policies
 
 
