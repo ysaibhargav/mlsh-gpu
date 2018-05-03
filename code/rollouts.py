@@ -43,6 +43,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     if recurrent:
         state = np.zeros([num_master_groups, num_sub_in_grp, len(sub_policies), 2*256], 
                 dtype='float32')
+        initial_state = state.copy()
         """
         states_tracker = np.array([state for _ in range(horizon)])
         states = np.zeros([horizon, num_master_groups, num_sub_in_grp, 2*256], 
@@ -75,10 +76,9 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
             dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "vpred2": vpreds2, 
                     "new" : news, "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
                     "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
-            """
             if recurrent:
-                dicti["state": states]
-            """
+                dicti["state"]: initial_state
+                #dicti["state"]: states
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
             ep_lens = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
@@ -210,39 +210,80 @@ def prepare_allrolls(allrolls, macrolen, gamma, lam, num_subpolicies, recurrent=
 def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
     group_shape = seg["new"][0].shape
     num_master_groups, num_sub_in_grp = group_shape
-    subpol_counts = np.zeros([num_subpolicies], dtype='int32')
-    for macro_ac in seg["macro_ac"]:
-        for i in range(num_master_groups):
-            for j in range(num_sub_in_grp):
-                subpol_counts[macro_ac[i][j]] += macrolen
-    subpols = []
-    for i in range(num_subpolicies):
-        obs = np.array([seg["ob"][0][0][0] for _ in range(subpol_counts[i])])
-        advs = np.zeros(subpol_counts[i], 'float32')
-        tdlams = np.zeros(subpol_counts[i], 'float32')
-        news = np.zeros(subpol_counts[i], 'int32')
-        acs = np.array([seg["ac"][0][0][0] for _ in range(subpol_counts[i])])
-        subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, "new": news}) 
-        """
-        if recurrent:
-            states = np.array([seg["state"][0][0][0] for _ in range(subpol_counts[i])])
-            subpols[-1]["state"] = states
-        """
-    subpol_counts = []
-    for i in range(num_subpolicies):
-        subpol_counts.append(0)
-    for i in range(len(seg["ob"])):
-        for j in range(num_master_groups):
-            for k in range(num_sub_in_grp):
-                mac = seg["macro_ac"][int(i/macrolen)][j][k]
-                subpols[mac]["ob"][subpol_counts[mac]] = seg["ob"][i][j][k]
-                subpols[mac]["adv"][subpol_counts[mac]] = seg["adv"][i][j][k]
-                subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
-                subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
-                subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
-                """
-                if recurrent:
-                    subpols[mac]["state"][subpol_counts[mac]] = seg["state"][i][j][k]
-                """
-                subpol_counts[mac] += 1
+    if not recurrent:
+        subpol_counts = np.zeros([num_subpolicies], dtype='int32')
+        for macro_ac in seg["macro_ac"]:
+            for i in range(num_master_groups):
+                for j in range(num_sub_in_grp):
+                    subpol_counts[macro_ac[i][j]] += macrolen
+        subpols = []
+        for i in range(num_subpolicies):
+            obs = np.array([seg["ob"][0][0][0] for _ in range(subpol_counts[i])])
+            advs = np.zeros(subpol_counts[i], 'float32')
+            tdlams = np.zeros(subpol_counts[i], 'float32')
+            news = np.zeros(subpol_counts[i], 'int32')
+            acs = np.array([seg["ac"][0][0][0] for _ in range(subpol_counts[i])])
+            subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, 
+                "new": news}) 
+        subpol_counts = []
+        for i in range(num_subpolicies):
+            subpol_counts.append(0)
+        for i in range(len(seg["ob"])):
+            for j in range(num_master_groups):
+                for k in range(num_sub_in_grp):
+                    mac = seg["macro_ac"][int(i/macrolen)][j][k]
+                    subpols[mac]["ob"][subpol_counts[mac]] = seg["ob"][i][j][k]
+                    subpols[mac]["adv"][subpol_counts[mac]] = seg["adv"][i][j][k]
+                    subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
+                    subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
+                    subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
+                    if recurrent and i == 0:
+                        subpols[mac]["state"] = seg["state"][j][k][mac]
+                    subpol_counts[mac] += 1
+    else:
+        subpols = []
+        horizon = len(seg["ob"])
+        T = num_master_groups*num_sub_in_grp*horizon
+        num_env = num_master_groups*num_sub_in_grp
+        for i in range(num_subpolicies):
+            obs = np.array([[seg["ob"][0][0][0] for _ in range(horizon)] 
+                for _ in range(num_env)])
+            advs = np.zeros([num_env, horizon], 'float32')
+            tdlams = np.zeros([num_env, horizon], 'float32')
+            news = np.zeros([num_env, horizon], 'int32')
+            masks = np.zeros([num_env, horizon], 'int32')
+            acs = np.array([[seg["ac"][0][0][0] for _ in range(horizon)] 
+                for _ in range(num_env)])
+            states = np.array([seg["state"][0][0][0] for _ in range(num_env)])
+            subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, 
+                "new": news, "mask": masks, "state": states}) 
+
+        for i in range(len(seg["ob"])):
+            for j in range(num_master_groups):
+                for k in range(num_sub_in_grp):
+                    env_idx = (j*num_sub_in_grp)+k
+                    #idx = ((j*num_sub_in_grp)+k)*horizon+i
+                    mac = seg["macro_ac"][int(i/macrolen)][j][k]
+                    subpols[mac]["ob"][env_idx][i] = seg["ob"][i][j][k]
+                    subpols[mac]["adv"][env_idx][i] = seg["adv"][i][j][k]
+                    subpols[mac]["tdlamret"][env_idx][i] = seg["tdlamret"][i][j][k]
+                    subpols[mac]["ac"][env_idx][i] = seg["ac"][i][j][k]
+                    subpols[mac]["new"][env_idx][i] = seg["new"][i][j][k]
+                    subpols[mac]["mask"][env_idx][i] = 1
+                    for l in range(num_subpolicies):
+                        subpols[l]["new"][env_idx][i] = seg["new"][i][j][k]
+                        subpols[l]["mask"][env_idx][i] = int(l == mac)
+
+        for i in range(num_subpolicies):
+            subpols[i]["ob"] = flatten_env_time_dims(subpols[i]["ob"])
+            subpols[i]["adv"] = flatten_env_time_dims(subpols[i]["adv"])
+            subpols[i]["tdlamret"] = flatten_env_time_dims(subpols[i]["tdlamret"])
+            subpols[i]["ac"] = flatten_env_time_dims(subpols[i]["ac"])
+            subpols[i]["new"] = flatten_env_time_dims(subpols[i]["new"])
+            subpols[i]["mask"] = flatten_env_time_dims(subpols[i]["mask"])
+
     return subpols
+
+def flatten_env_time_dims(arr):
+    s = arr.shape
+    return arr.reshape(s[0] * s[1], *s[2:])

@@ -14,7 +14,7 @@ import sys
 class Learner:
     def __init__(self, envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=1., entcoeff=0, divcoeff=0., optim_epochs=10, 
-            master_lr=1e-3, sub_lr=3e-4, optim_batchsize=64):
+            master_lr=1e-3, sub_lr=3e-4, optim_batchsize=64, recurrent=False):
         self.policies = policies
         self.sub_policies = sub_policies
         self.old_policies = old_policies
@@ -38,8 +38,8 @@ class Learner:
                 for _ in range(num_master_groups)]
         retvals = zip(*[self.policy_loss(policies[i], 
             old_policies[i], self.master_obs[i], self.master_acs[i], self.master_atargs[i], 
-            self.master_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff) 
-            for i in range(num_master_groups)])
+            self.master_ret[i], clip_param, mask=tf.constant(1.), vfcoeff=vfcoeff, 
+            entcoeff=entcoeff) for i in range(num_master_groups)])
         self.master_losses, self.master_kl, self.master_pol_surr, self.master_vf_loss, \
                 self.master_entropy, self.master_values, _ = retvals 
 
@@ -68,10 +68,20 @@ class Learner:
                 for _ in range(num_subpolicies)]
         self.logpacs = [tf.placeholder(dtype=tf.float32, shape=[num_subpolicies, None])
                 for _ in range(num_subpolicies)]
+        self.loss_masks = [tf.placeholder(dtype=tf.float32, shape=[None])
+                for _ in range(num_subpolicies)]
+        if recurrent:
+            self.sub_masks = [tf.get_placeholder(name="masks_%i"%_, dtype=tf.int32, 
+                shape=[None]) for _ in range(num_subpolicies)]
+            self.sub_states = [tf.get_placeholder(name="states_%i"%_, dtype=tf.int32, 
+                shape=[None, 2*256]) for _ in range(num_subpolicies)]
+            self.loss_masks = [tf.placeholder(dtype=tf.int32, 
+                shape=[None]) for _ in range(num_subpolicies)]
         sub_retvals = zip(*[self.policy_loss(sub_policies[i], 
             old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
-            self.sub_ret[i], clip_param, vfcoeff=vfcoeff, entcoeff=entcoeff, 
-            divcoeff=divcoeff, logpacs=self.logpacs[i]) for i in range(num_subpolicies)])
+            self.sub_ret[i], clip_param, mask=self.loss_masks[i], vfcoeff=vfcoeff, 
+            entcoeff=entcoeff, divcoeff=divcoeff, logpacs=None)#self.logpacs[i]) 
+            for i in range(num_subpolicies)])
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
                 self.sub_entropy, self.sub_values, self.div_loss = sub_retvals 
 
@@ -100,7 +110,8 @@ class Learner:
                     if 'master_adam_%i'%i in var.name] 
             U.get_session().run(tf.initialize_variables(optimizer_scope))
         
-    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, vfcoeff=1., 
+    # TODO: cross check with baselines PPO
+    def policy_loss(self, pi, oldpi, ob, ac, atarg, ret, clip_param, mask=1, vfcoeff=1., 
             entcoeff=0, divcoeff=0., logpacs=None):
         LOGP_MAX = 20
         KL_MAX = 5
@@ -109,17 +120,18 @@ class Learner:
         approx_kl = tf.reduce_mean(tf.square(pi.pd.logp(ac) - oldpi.pd.logp(ac)))
         surr1 = ratio * atarg
         surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
-        pol_surr = -U.mean(tf.minimum(surr1, surr2))
+        pol_surr = -U.mean(mask*tf.minimum(surr1, surr2))
         vfloss1 = tf.square(pi.vpred - ret)
         vpredclipped = oldpi.vpred + U.clip(pi.vpred - oldpi.vpred, -clip_param, 
                 clip_param)
         vfloss2 = tf.square(vpredclipped - ret)
-        vf_loss = U.mean(tf.maximum(vfloss1, vfloss2))
-        total_loss = pol_surr + vfcoeff*vf_loss - entcoeff*entropy
+        vf_loss = U.mean(mask*tf.maximum(vfloss1, vfloss2))
+        mask_scalar = tf.reduce_mean(mask)
+        total_loss = pol_surr + vfcoeff*vf_loss - mask_scalar*entcoeff*entropy
         div_loss = None
         if logpacs is not None:
             div_loss = tf.reduce_sum(U.clip(tf.reduce_mean(tf.square(tf.exp(pi.pd.logp(ac))-
-                U.clip(tf.exp(logpacs), -LOGP_MAX, LOGP_MAX)), axis=1), 0, KL_MAX))
+                U.clip(tf.exp(logpacs), -LOGP_MAX, LOGP_MAX))*mask, axis=1), 0, KL_MAX))
             total_loss -= divcoeff*div_loss
         return total_loss, approx_kl, pol_surr, vf_loss, entropy, pi.vpred, div_loss
 
@@ -195,11 +207,78 @@ class Learner:
         logger.logkv('(M) value loss', np.mean(vf_loss_array))
         logger.logkv('(M) entropy loss', np.mean(entropy_array))
         logger.dumpkvs()
-
-        #return np.mean(ep_rets), np.mean(ep_lens)
         
 
-    def updateSubPolicies(self, test_segs, num_batches, optimize=True):
+    def updateSubPoliciesRecurrent(self, test_segs, num_batches, optimize=True):
+        num_env = test_segs[0]["ob"].shape[0]
+        horizon = test_segs[0]["ob"].shape[1]
+        envinds = np.arange(num_env)
+        flatinds = np.arange(num_env*horizon).reshape(num_env, horizon)
+        envsperbatch = max(1, num_env // num_batches)
+        num_batches = num_env // envsperbatch
+        for i in range(self.sum_subpolicies):
+            test_seg = test_segs[i]
+            ob, ac, atarg, tdlamret, new, mask = test_seg["ob"], test_seg["ac"], \
+                    test_seg["adv"], test_seg["tdlamret"], test_seg["new"], test_seg["mask"]
+            mask_idx = np.array(mask, bool)
+            is_optimizing = np.sum(mask) > 0
+
+            self.subs_assign_old_eq_new[i]()
+
+            if self.optim_batchsize > 0 and is_optimize and optimize:
+                self.sub_policies[i].ob_rms.update(ob[mask_idx])
+                atarg = np.array(atarg, dtype='float32')
+                atarg = (atarg - atarg[mask_idx].mean()) / max(atarg[mask_idx].std(), 
+                        0.000001)
+                test_seg["adv"] = atarg
+
+        def make_feed_dict():
+            feed_dict = [{} for _ in range(num_batches)]
+
+            for i in range(self.num_subpolicies):
+                np.random.shuffle(envinds)
+                batch_num = 0
+                for start in range(0, num_env, envsperbatch):
+                    end = start + envsperbatch
+                    mbenvinds = envinds[start:end]
+                    mbflatinds = flatinds[mbenvinds].ravel()
+
+                    feed_dict[batch_num][self.sub_obs[i]] = test_seg["ob"][mbflatinds] 
+                    feed_dict[batch_num][self.sub_acs[i]] = test_seg["ac"][mbflatinds] 
+                    feed_dict[batch_num][self.sub_atargs[i]] = test_seg["adv"][mbflatinds] 
+                    feed_dict[batch_num][self.sub_ret[i]] = test_seg["tdlamret"][mbflatinds] 
+                    feed_dict[batch_num][self.sub_masks[i]] = test_seg["new"][mbflatinds] 
+                    feed_dict[batch_num][self.loss_masks[i]] = test_seg["mask"][mbflatinds] 
+                    feed_dict[batch_num][self.sub_states[i]] = test_seg["state"][mbenvinds] 
+                    batch_num += 1
+
+            return feed_dict
+
+
+        kl_array, pol_surr_array, vf_loss_array, entropy_array = [[[] 
+            for _ in range(self.num_subpolicies)] for _ in range(4)]
+        for _ in range(self.optim_epochs):
+            feed_dict = make_feed_dict()
+            for _dict in feed_dict:
+
+             _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = \
+                    U.get_session().run([self.sub_train_steps, self.sub_kl, 
+                        self.sub_pol_surr, self.sub_vf_loss, self.sub_entropy], _dict)
+
+        kl_array.append(sub_kl)
+        pol_sur_array.append(sub_pol_surr)
+        vf_loss_array.append(sub_vf_loss)
+        entropy_array.append(sub_entropy)
+                
+        for i in range(self.num_subpolicies):
+            logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
+            logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
+            logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
+            logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
+            logger.dumpkvs()
+
+
+    def updateSubPoliciesNonRecurrent(self, test_segs, num_batches, optimize=True):
         optimizable = []
         test_ds = []
         batchsizes = []
@@ -208,10 +287,12 @@ class Learner:
             test_seg = test_segs[i]
             ob, ac, atarg, tdlamret = test_seg["ob"], test_seg["ac"], test_seg["adv"], \
                     test_seg["tdlamret"]
+            # logpacs for diversity loss
             logpacs = [U.get_session().run(pi.pd.logp(test_seg['ac']), 
                 {self.sub_obs[j]: test_seg['ob']}) for j, pi in enumerate(self.sub_policies)]
             logpacs = np.array(logpacs).transpose()
 
+            # don't optimize if insufficient data
             if np.shape(ob)[0] < 1:
                 is_optimizing = False
             else:
@@ -232,6 +313,8 @@ class Learner:
 
         if optimize:
             def make_feed_dict():
+                # one dict per batch
+                # multiple subpolicy data in one dict
                 feed_dict = [{} for _ in range(num_batches)]
 
                 for i in range(self.num_subpolicies):
@@ -255,6 +338,7 @@ class Learner:
             for _ in range(self.optim_epochs):
                 feed_dict = make_feed_dict()
                 for _dict in feed_dict:
+                    # get indicies of subpolicies whose data exists
                     valid_idx = [i for i in range(self.num_subpolicies) if i in _dict] 
                     train_steps = ix_(self.sub_train_steps, valid_idx)  
                     kl = ix_(self.sub_kl, valid_idx)  
@@ -285,6 +369,13 @@ class Learner:
                 logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
                 logger.logkv('(S%d) diversity loss'%i, np.mean(div_array[i]))
                 logger.dumpkvs()
+
+
+    def updateSubPolicies(self, test_segs, num_batches, optimize=True, recurrent=False):
+        if recurrent:
+            self.updateSubPoliciesRecurrent(test_segs, num_batches, optimize=optimize)
+        else:
+            self.updateSubPoliciesNonRecurrent(test_segs, num_batches, optimize=optimize)
 
 
 def flatten_lists(listoflists):

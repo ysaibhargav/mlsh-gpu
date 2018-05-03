@@ -7,6 +7,7 @@ from running_mean_std import RunningMeanStd
 from baselines.a2c.utils import conv, fc, conv_to_fc, \
         batch_to_seq, seq_to_batch, lstm, lnlstm
 from baselines.ppo2.policies import nature_cnn
+import pdb
 
 
 class SubPolicy(object):
@@ -36,18 +37,19 @@ class SubPolicy(object):
                     U.normc_initializer(0.01))
         self.pd = pdtype.pdfromflat(self.pdparam)
 
-    def _lstm(self, obs, states, masks, nlstm, ac_space, horizon, num_env):
-        # obs: T * ob_shape 
+    def _lstm(self, obs, states, masks, nlstm, ac_space, nbatch, nsteps):
+        # obs: nbatch * ob_shape 
         # states: num_env * (2xnlstm) 
-        # masks: T
-        T = horizon * num_env
+        # masks: nbatch
+        # TODO: fix dimensions
+        num_env = nbatch // nsteps
         nh, nw, nc = obs.shape[1:]
-        ob_shape = [T, nh, nw, nc]
+        ob_shape = [nsteps, nh, nw, nc]
         nact = ac_space.n
         with tf.variable_scope('lstm'):
             h = nature_cnn(obs)
-            xs = batch_to_seq(h, num_env, horizon)
-            ms = batch_to_seq(masks, num_env, horizon)
+            xs = batch_to_seq(h, num_env, nsteps)
+            ms = batch_to_seq(masks, num_env, nsteps)
             h5, snew = lstm(xs, ms, states, 'lstm1', nh=nlstm)
             h5 = seq_to_batch(h5)
             pi = fc(h5, 'pi', nact)
@@ -61,7 +63,7 @@ class SubPolicy(object):
         self.snew = snew
 
     def __init__(self, name, ob, ac_space, network='mlp', gaussian_fixed_var=True, 
-            horizon=None, num_env=None, states=None, masks=None):
+            nsteps=None, nbatch=None, states=None, masks=None):
         self.network = network
 
         shape = []
@@ -83,12 +85,12 @@ class SubPolicy(object):
                 self.gaussian_fixed_var = gaussian_fixed_var
                 self._mlp(obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var)
             elif network == 'lstm':
-                assert horizon is not None and num_env is not None
+                assert nsteps is not None and nbatch is not None
                 assert states is not None and masks is not None
-                assert isinstance(horizon, int) and isinstance(num_env, int)
-                assert horizon > 0 and num_env > 0
+                assert isinstance(nsteps, int) and isinstance(nbatch, int)
+                assert nsteps > 0 and nbatch > 0
                 self.nlstm = nlstm = 256
-                self._lstm(obs, states, masks, nlstm, ac_space, horizon, num_env)
+                self._lstm(obs, states, masks, nlstm, ac_space, nbatch, nsteps)
 
 
         # sample actions

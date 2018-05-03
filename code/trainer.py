@@ -31,6 +31,7 @@ def start(callback, args):
     num_sub_batches = args.num_sub_batches
     # number of sub groups in each group
     num_sub_in_grp = args.num_sub_in_grp
+    num_env = num_master_groups * num_sub_batches
 
     recurrent = args.network == 'lstm'
 
@@ -78,22 +79,24 @@ def start(callback, args):
         num_env = num_master_groups * num_sub_in_grp 
 
         sub_states = [U.get_placeholder(name="states_%i"%x, dtype=tf.float32, 
-            shape=[num_env, 2*256]) for x in range(num_subs)]
+            #shape=[num_env, 2*256]) for x in range(num_subs)]
+            shape=[None, 2*256]) for x in range(num_subs)]
         sub_masks = [U.get_placeholder(name="masks_%i"%x, dtype=tf.float32, 
-            shape=[macro_duration*num_env]) for x in range(num_subs)]
+            #shape=[macro_duration*num_env]) for x in range(num_subs)]
+            shape=[None]) for x in range(num_subs)]
 
         sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-            network='lstm', horizon=macro_duration, num_env=num_env, states=sub_states[x], 
+            network='lstm', nsteps=horizon, nbatch=horizon*num_env, states=sub_states[x], 
             masks=sub_masks[x]) for x in range(num_subs)]
         old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-            ac_space=ac_space, network='lstm', horizon=macro_duration, num_env=num_env, 
+            ac_space=ac_space, network='lstm', nsteps=horizon, nbatch=horizon*num_env, 
             states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
 
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, 
             divcoeff=args.divcoeff, optim_epochs=10, master_lr=args.master_lr, 
-            sub_lr=args.sub_lr, optim_batchsize=32)
+            sub_lr=args.sub_lr, optim_batchsize=32, recurrent=recurrent)
     rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
             macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
 
@@ -135,5 +138,6 @@ def start(callback, args):
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs, recurrent=recurrent)
-            learner.updateSubPolicies(test_seg, num_sub_batches, (mini_ep >= warmup_time))
+            learner.updateSubPolicies(test_seg, num_sub_batches, optimize=(mini_ep >= warmup_time), 
+                    recurrent=recurrent)
             mini_ep += 1
