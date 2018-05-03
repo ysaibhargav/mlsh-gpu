@@ -6,9 +6,15 @@ from rl_algs.common.distributions import make_pdtype
 from running_mean_std import RunningMeanStd
 from baselines.a2c.utils import conv, fc, conv_to_fc, \
         batch_to_seq, seq_to_batch, lstm, lnlstm
-from baselines.ppo2.policies import nature_cnn
+#from baselines.ppo2.policies import nature_cnn
 import pdb
 
+def feature_net(unscaled_images):
+        scaled_images = tf.cast(unscaled_images, tf.float32)# / 255.
+        activ = tf.nn.relu
+        h = activ(conv(scaled_images, 'c1', nf=4, rf=8, stride=4, init_scale=np.sqrt(2)))
+        h3 = conv_to_fc(h)
+        return activ(fc(h3, 'fc1', nh=16, init_scale=np.sqrt(2)))
 
 class SubPolicy(object):
     def _mlp(self, obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var):
@@ -37,7 +43,7 @@ class SubPolicy(object):
                     U.normc_initializer(0.01))
         self.pd = pdtype.pdfromflat(self.pdparam)
 
-    def _lstm(self, obs, states, masks, nlstm, ac_space, nbatch, nsteps):
+    def _lstm(self, obs, states, masks, nlstm, ac_space, nbatch, nsteps, reuse=False):
         # obs: nbatch * ob_shape 
         # states: num_env * (2xnlstm) 
         # masks: nbatch
@@ -46,8 +52,8 @@ class SubPolicy(object):
         nh, nw, nc = obs.shape[1:]
         ob_shape = [nsteps, nh, nw, nc]
         nact = ac_space.n
-        with tf.variable_scope('lstm'):
-            h = nature_cnn(obs)
+        with tf.variable_scope('lstm', reuse=reuse):
+            h = feature_net(obs)
             xs = batch_to_seq(h, num_env, nsteps)
             ms = batch_to_seq(masks, num_env, nsteps)
             h5, snew = lstm(xs, ms, states, 'lstm1', nh=nlstm)
@@ -63,14 +69,14 @@ class SubPolicy(object):
         self.snew = snew
 
     def __init__(self, name, ob, ac_space, network='mlp', gaussian_fixed_var=True, 
-            nsteps=None, nbatch=None, states=None, masks=None):
+            nsteps=None, nbatch=None, nlstm=256, states=None, masks=None, reuse=False):
         self.network = network
 
         shape = []
         for d in range(1, len(ob.shape)):
             shape.append(ob.shape[d])
 
-        with tf.variable_scope(name):
+        with tf.variable_scope(name, reuse=reuse):
             self.scope = tf.get_variable_scope().name
 
             with tf.variable_scope("obfilter"):
@@ -89,7 +95,6 @@ class SubPolicy(object):
                 assert states is not None and masks is not None
                 assert isinstance(nsteps, int) and isinstance(nbatch, int)
                 assert nsteps > 0 and nbatch > 0
-                self.nlstm = nlstm = 256
                 self._lstm(obs, states, masks, nlstm, ac_space, nbatch, nsteps)
 
 

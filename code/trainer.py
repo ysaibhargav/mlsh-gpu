@@ -34,6 +34,8 @@ def start(callback, args):
     num_env = num_master_groups * num_sub_batches
 
     recurrent = args.network == 'lstm'
+    if recurrent:
+        nlstm = args.nlstm
 
     def make_env_vec(seed):
         # common random numbers in sub groups
@@ -60,8 +62,6 @@ def start(callback, args):
     # observation in.
     master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32, 
         shape=[None] + list(ob_space.shape)) for x in range(num_master_groups)]
-    sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
-        shape=[None] + list(ob_space.shape)) for x in range(num_subs)]
 
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
         num_subpolicies=num_subs, network='mlp') for x in 
@@ -71,6 +71,8 @@ def start(callback, args):
         range(num_master_groups)]
 
     if not recurrent:
+        sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
+            shape=[None] + list(ob_space.shape)) for x in range(num_subs)]
         sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
             network='mlp') for x in range(num_subs)]
         old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
@@ -78,27 +80,45 @@ def start(callback, args):
     elif recurrent:
         num_env = num_master_groups * num_sub_in_grp 
 
+        envsperbatch = max(1, num_env // num_sub_batches)
+        num_batches = num_env // envsperbatch
+        nbatch = envsperbatch * num_rollouts
+
+        sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
+            shape=[nbatch] + list(ob_space.shape)) for x in range(num_subs)]
         sub_states = [U.get_placeholder(name="states_%i"%x, dtype=tf.float32, 
-            #shape=[num_env, 2*256]) for x in range(num_subs)]
-            shape=[None, 2*256]) for x in range(num_subs)]
+            shape=[envsperbatch, 2*nlstm]) for x in range(num_subs)]
         sub_masks = [U.get_placeholder(name="masks_%i"%x, dtype=tf.float32, 
-            #shape=[macro_duration*num_env]) for x in range(num_subs)]
-            shape=[None]) for x in range(num_subs)]
+            shape=[nbatch]) for x in range(num_subs)]
+
+        actor_sub_obs = [U.get_placeholder(name="actor_sub_ob_%i"%x, dtype=tf.float32, 
+            shape=[1] + list(ob_space.shape)) for x in range(num_subs)]
+        actor_sub_states = [U.get_placeholder(name="actor_states_%i"%x, dtype=tf.float32, 
+            shape=[1, 2*nlstm]) for x in range(num_subs)]
+        actor_sub_masks = [U.get_placeholder(name="actor_masks_%i"%x, dtype=tf.float32, 
+            shape=[1]) for x in range(num_subs)]
 
         sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-            network='lstm', nsteps=horizon, nbatch=horizon*num_env, states=sub_states[x], 
-            masks=sub_masks[x]) for x in range(num_subs)]
-        old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-            ac_space=ac_space, network='lstm', nsteps=horizon, nbatch=horizon*num_env, 
+            network='lstm', nsteps=num_rollouts, nbatch=nbatch, nlstm=nlstm, 
             states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
+        old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
+            ac_space=ac_space, network='lstm', nsteps=num_rollouts, nbatch=nbatch, nlstm=nlstm,
+            states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
+        actor_sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=actor_sub_obs[x], 
+            ac_space=ac_space, network='lstm', nsteps=1, nbatch=1, nlstm=nlstm,
+            states=actor_sub_states[x], masks=actor_sub_masks[x], reuse=True) 
+            for x in range(num_subs)]
 
 
     learner = Learner(envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=args.vfcoeff, entcoeff=args.entcoeff, 
             divcoeff=args.divcoeff, optim_epochs=10, master_lr=args.master_lr, 
-            sub_lr=args.sub_lr, optim_batchsize=32, recurrent=recurrent)
-    rollout = rollouts.traj_segment_generator(policies, sub_policies, envs, 
-            macro_duration, num_rollouts, num_sub_in_grp, stochastic=True, args=args)
+            sub_lr=args.sub_lr, optim_batchsize=32, envsperbatch=envsperbatch if 
+            recurrent else 0, num_rollouts=num_rollouts, nlstm=nlstm if recurrent else 0, 
+            recurrent=recurrent)
+    rollout = rollouts.traj_segment_generator(policies, actor_sub_policies if recurrent 
+            else sub_policies, envs, macro_duration, num_rollouts, num_sub_in_grp, 
+            stochastic=True, args=args)
 
     start_iter = 0
     if args.continue_iter is not None:
@@ -138,6 +158,6 @@ def start(callback, args):
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs, recurrent=recurrent)
-            learner.updateSubPolicies(test_seg, num_sub_batches, optimize=(mini_ep >= warmup_time), 
+            learner.updateSubPolicies(test_seg, num_sub_batches, num_rollouts, num_env, optimize=(mini_ep >= warmup_time), 
                     recurrent=recurrent)
             mini_ep += 1

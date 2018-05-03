@@ -5,6 +5,7 @@ parser.add_argument('savename', type=str)
 parser.add_argument('--task', type=str)
 parser.add_argument('--network', type=str)
 parser.add_argument('--num_subs', type=int)
+parser.add_argument('--nlstm', type=int)
 parser.add_argument('--macro_duration', type=int)
 parser.add_argument('--num_rollouts', type=int)
 parser.add_argument('--warmup_time', type=int)
@@ -39,6 +40,7 @@ from baselines.logger import Logger, CSVOutputFormat, HumanOutputFormat
 
 # python3 main.py --task=MovementBandits-v0 --num_subs=2 --macro_duration=10 --num_rollouts=2000 --warmup_time=9 --train_time=1 --num_master_grp=4 --num_sub_batches=15 --num_sub_in_grp=1 --vfcoeff=.5 --entcoeff=0 --master_lr=1e-2 --sub_lr=3e-4 --replay=n --divcoeff=0 test
 
+# TODO: fix reward calculations 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True

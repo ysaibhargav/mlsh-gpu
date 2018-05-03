@@ -41,12 +41,13 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
     macro_vpreds = np.zeros([macro_horizon, num_master_groups, num_sub_in_grp], 'float32')
 
     if recurrent:
-        state = np.zeros([num_master_groups, num_sub_in_grp, len(sub_policies), 2*256], 
+        nlstm = args.nlstm
+        state = np.zeros([num_master_groups, num_sub_in_grp, len(sub_policies), 2*nlstm], 
                 dtype='float32')
         initial_state = state.copy()
         """
         states_tracker = np.array([state for _ in range(horizon)])
-        states = np.zeros([horizon, num_master_groups, num_sub_in_grp, 2*256], 
+        states = np.zeros([horizon, num_master_groups, num_sub_in_grp, 2*nlstm], 
                 dtype='float32')
         """
 
@@ -77,7 +78,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     "new" : news, "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
                     "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
             if recurrent:
-                dicti["state"]: initial_state
+                dicti["state"] = initial_state
                 #dicti["state"]: states
             yield {key: np.copy(val) for key,val in dicti.items()}
             ep_rets = [[[] for _ in range(num_sub_in_grp)] for _ in range(num_master_groups)]
@@ -100,7 +101,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     """
                     for k, sub_policy in enumerate(sub_policies):
                         _ac, _vpred, _state = sub_policy.act(stochastic, [ob[i][j]], 
-                                [state[i][j][k]], [int(new[i][j])]) 
+                                [state[i][j][k]], [float(new[i][j])]) 
                         state[i][j][k] = _state[0]
                         if k == cur_subpolicy[i][j]: 
                             ac[i][j] = _ac
@@ -129,7 +130,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
         acs[i] = ac # current action (t)
         """
         if recurrent:
-            _state = np.zeros([num_master_groups, num_sub_in_grp, 2*256])
+            _state = np.zeros([num_master_groups, num_sub_in_grp, 2*nlstm])
             for j in range(num_master_groups):
                 for k in range(num_sub_in_grp):
                     _state[j][k] = state[j][k][cur_subpolicy[j][k]]
@@ -144,8 +145,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
 
         # TODO: replay - render the environment every few steps
         if replay:
-            if t % macrolen == 0:
-                print(cur_subpolicy)
+            #if t % macrolen == 0:
+            #    print(cur_subpolicy)
             envs[0].envs[0].render()
             time.sleep(0.05)
 

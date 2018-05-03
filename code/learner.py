@@ -14,7 +14,8 @@ import sys
 class Learner:
     def __init__(self, envs, policies, sub_policies, old_policies, old_sub_policies, 
             clip_param=0.2, vfcoeff=1., entcoeff=0, divcoeff=0., optim_epochs=10, 
-            master_lr=1e-3, sub_lr=3e-4, optim_batchsize=64, recurrent=False):
+            master_lr=1e-3, sub_lr=3e-4, optim_batchsize=64, envsperbatch=None, 
+            num_rollouts=None, nlstm=256, recurrent=False):
         self.policies = policies
         self.sub_policies = sub_policies
         self.old_policies = old_policies
@@ -27,6 +28,8 @@ class Learner:
         self.num_subpolicies = num_subpolicies = len(sub_policies)
         self.ob_space = envs[0].observation_space
         self.ac_space = envs[0].action_space
+        self.nbatch = nbatch = num_rollouts * envsperbatch
+        self.envsperbatch = envsperbatch
 
         self.master_obs = [U.get_placeholder(name="master_ob_%i"%x, dtype=tf.float32,
             shape=[None] + list(self.ob_space.shape)) for x in range(num_master_groups)]
@@ -58,8 +61,9 @@ class Learner:
                 for i in range(num_master_groups)]
        
 
-        self.sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32,
-            shape=[None] + list(self.ob_space.shape)) for x in range(num_subpolicies)]
+        if not recurrent:
+            self.sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32,
+                shape=[None] + list(self.ob_space.shape)) for x in range(num_subpolicies)]
         self.sub_acs = [sub_policies[0].pdtype.sample_placeholder([None]) 
                 for _ in range(num_subpolicies)]
         self.sub_atargs = [tf.placeholder(dtype=tf.float32, shape=[None])
@@ -71,16 +75,19 @@ class Learner:
         self.loss_masks = [tf.placeholder(dtype=tf.float32, shape=[None])
                 for _ in range(num_subpolicies)]
         if recurrent:
-            self.sub_masks = [tf.get_placeholder(name="masks_%i"%_, dtype=tf.int32, 
-                shape=[None]) for _ in range(num_subpolicies)]
-            self.sub_states = [tf.get_placeholder(name="states_%i"%_, dtype=tf.int32, 
-                shape=[None, 2*256]) for _ in range(num_subpolicies)]
-            self.loss_masks = [tf.placeholder(dtype=tf.int32, 
+            self.sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32,
+                shape=[nbatch] + list(self.ob_space.shape)) for x in range(num_subpolicies)]
+            self.sub_masks = [U.get_placeholder(name="masks_%i"%_, dtype=tf.float32, 
+                shape=[nbatch]) for _ in range(num_subpolicies)]
+            self.sub_states = [U.get_placeholder(name="states_%i"%_, dtype=tf.float32, 
+                shape=[envsperbatch, 2*nlstm]) for _ in range(num_subpolicies)]
+            self.loss_masks = [tf.placeholder(dtype=tf.float32, 
                 shape=[None]) for _ in range(num_subpolicies)]
         sub_retvals = zip(*[self.policy_loss(sub_policies[i], 
             old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
-            self.sub_ret[i], clip_param, mask=self.loss_masks[i], vfcoeff=vfcoeff, 
-            entcoeff=entcoeff, divcoeff=divcoeff, logpacs=None)#self.logpacs[i]) 
+            self.sub_ret[i], clip_param, mask=self.loss_masks[i] if recurrent else 
+            tf.constant(1.), vfcoeff=vfcoeff, entcoeff=entcoeff, divcoeff=divcoeff, 
+            logpacs=None)#self.logpacs[i]) 
             for i in range(num_subpolicies)])
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
                 self.sub_entropy, self.sub_values, self.div_loss = sub_retvals 
@@ -209,14 +216,13 @@ class Learner:
         logger.dumpkvs()
         
 
-    def updateSubPoliciesRecurrent(self, test_segs, num_batches, optimize=True):
-        num_env = test_segs[0]["ob"].shape[0]
-        horizon = test_segs[0]["ob"].shape[1]
+    def updateSubPoliciesRecurrent(self, test_segs, num_batches, horizon, num_env, 
+            optimize=True):
         envinds = np.arange(num_env)
         flatinds = np.arange(num_env*horizon).reshape(num_env, horizon)
         envsperbatch = max(1, num_env // num_batches)
         num_batches = num_env // envsperbatch
-        for i in range(self.sum_subpolicies):
+        for i in range(len(self.sub_policies)):
             test_seg = test_segs[i]
             ob, ac, atarg, tdlamret, new, mask = test_seg["ob"], test_seg["ac"], \
                     test_seg["adv"], test_seg["tdlamret"], test_seg["new"], test_seg["mask"]
@@ -225,7 +231,7 @@ class Learner:
 
             self.subs_assign_old_eq_new[i]()
 
-            if self.optim_batchsize > 0 and is_optimize and optimize:
+            if self.optim_batchsize > 0 and is_optimizing and optimize:
                 self.sub_policies[i].ob_rms.update(ob[mask_idx])
                 atarg = np.array(atarg, dtype='float32')
                 atarg = (atarg - atarg[mask_idx].mean()) / max(atarg[mask_idx].std(), 
@@ -236,6 +242,7 @@ class Learner:
             feed_dict = [{} for _ in range(num_batches)]
 
             for i in range(self.num_subpolicies):
+                test_seg = test_segs[i]
                 np.random.shuffle(envinds)
                 batch_num = 0
                 for start in range(0, num_env, envsperbatch):
@@ -255,27 +262,29 @@ class Learner:
             return feed_dict
 
 
-        kl_array, pol_surr_array, vf_loss_array, entropy_array = [[[] 
-            for _ in range(self.num_subpolicies)] for _ in range(4)]
-        for _ in range(self.optim_epochs):
-            feed_dict = make_feed_dict()
-            for _dict in feed_dict:
+        if optimize:
+            kl_array, pol_surr_array, vf_loss_array, entropy_array = [[[] 
+                for _ in range(self.num_subpolicies)] for _ in range(4)]
+            for _ in range(self.optim_epochs):
+                feed_dict = make_feed_dict()
+                for _dict in feed_dict:
 
-             _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = \
-                    U.get_session().run([self.sub_train_steps, self.sub_kl, 
-                        self.sub_pol_surr, self.sub_vf_loss, self.sub_entropy], _dict)
+                 _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy = \
+                        U.get_session().run([self.sub_train_steps, self.sub_kl, 
+                            self.sub_pol_surr, self.sub_vf_loss, self.sub_entropy], _dict)
 
-        kl_array.append(sub_kl)
-        pol_sur_array.append(sub_pol_surr)
-        vf_loss_array.append(sub_vf_loss)
-        entropy_array.append(sub_entropy)
-                
-        for i in range(self.num_subpolicies):
-            logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
-            logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
-            logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
-            logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
-            logger.dumpkvs()
+            valid_idx = range(self.num_subpolicies)
+            ix_append_(kl_array, sub_kl, valid_idx)
+            ix_append_(pol_surr_array, sub_pol_surr, valid_idx)
+            ix_append_(vf_loss_array, sub_vf_loss, valid_idx)
+            ix_append_(entropy_array, sub_entropy, valid_idx)
+                    
+            for i in range(self.num_subpolicies):
+                logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
+                logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
+                logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
+                logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
+                logger.dumpkvs()
 
 
     def updateSubPoliciesNonRecurrent(self, test_segs, num_batches, optimize=True):
@@ -352,28 +361,35 @@ class Learner:
                         if isinstance(key, int):
                             del _dict[key]
 
+                    """
                     _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy, sub_div_loss = \
                             U.get_session().run([train_steps, kl, pol_surr, vf_loss, 
                                 entropy, div_loss], _dict)
+                    """
+                    _, sub_kl, sub_pol_surr, sub_vf_loss, sub_entropy= \
+                            U.get_session().run([train_steps, kl, pol_surr, vf_loss, 
+                                entropy], _dict)
 
                     ix_append_(kl_array, sub_kl, valid_idx)
                     ix_append_(pol_surr_array, sub_pol_surr, valid_idx)
                     ix_append_(vf_loss_array, sub_vf_loss, valid_idx)
                     ix_append_(entropy_array, sub_entropy, valid_idx)
-                    ix_append_(div_array, sub_div_loss, valid_idx)
+                    #ix_append_(div_array, sub_div_loss, valid_idx)
 
             for i in range(self.num_subpolicies):
                 logger.logkv('(S%d) KL'%i, np.mean(kl_array[i]))
                 logger.logkv('(S%d) policy loss'%i, np.mean(pol_surr_array[i]))
                 logger.logkv('(S%d) value loss'%i, np.mean(vf_loss_array[i]))
                 logger.logkv('(S%d) entropy loss'%i, np.mean(entropy_array[i]))
-                logger.logkv('(S%d) diversity loss'%i, np.mean(div_array[i]))
+                #logger.logkv('(S%d) diversity loss'%i, np.mean(div_array[i]))
                 logger.dumpkvs()
 
 
-    def updateSubPolicies(self, test_segs, num_batches, optimize=True, recurrent=False):
+    def updateSubPolicies(self, test_segs, num_batches, horizon, num_env, 
+            optimize=True, recurrent=False):
         if recurrent:
-            self.updateSubPoliciesRecurrent(test_segs, num_batches, optimize=optimize)
+            self.updateSubPoliciesRecurrent(test_segs, num_batches, horizon, num_env, 
+                    optimize=optimize)
         else:
             self.updateSubPoliciesNonRecurrent(test_segs, num_batches, optimize=optimize)
 
