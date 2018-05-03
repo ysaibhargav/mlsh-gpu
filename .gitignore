@@ -112,3 +112,4 @@ MNIST-data/
 *.swo
 *.swn
 savedir/
+code/*txt
