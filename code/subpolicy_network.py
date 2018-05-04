@@ -10,11 +10,13 @@ from baselines.a2c.utils import conv, fc, conv_to_fc, \
 import pdb
 
 def feature_net(unscaled_images):
-        scaled_images = tf.cast(unscaled_images, tf.float32)# / 255.
-        activ = tf.nn.relu
-        h = activ(conv(scaled_images, 'c1', nf=4, rf=8, stride=4, init_scale=np.sqrt(2)))
-        h3 = conv_to_fc(h)
-        return activ(fc(h3, 'fc1', nh=16, init_scale=np.sqrt(2)))
+    scaled_images = tf.cast(unscaled_images, tf.float32)# / 255.
+    activ = tf.nn.relu
+    h = activ(conv(scaled_images, 'c1', nf=8, rf=8, stride=4, init_scale=np.sqrt(2)))
+    h2 = activ(conv(h, 'c2', nf=4, rf=4, stride=2, init_scale=np.sqrt(2)))
+    h3 = activ(conv(h2, 'c3', nf=2, rf=3, stride=1, init_scale=np.sqrt(2)))
+    h3 = conv_to_fc(h3)
+    return activ(fc(h3, 'fc1', nh=16, init_scale=np.sqrt(2)))
 
 class SubPolicy(object):
     def _mlp(self, obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var):

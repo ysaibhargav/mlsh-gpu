@@ -33,7 +33,7 @@ def start(callback, args):
     num_sub_in_grp = args.num_sub_in_grp
     num_env = num_master_groups * num_sub_batches
 
-    recurrent = args.network == 'lstm'
+    recurrent = args.subpol_network == 'lstm'
     if recurrent:
         nlstm = args.nlstm
 
@@ -64,19 +64,19 @@ def start(callback, args):
         shape=[None] + list(ob_space.shape)) for x in range(num_master_groups)]
 
     policies = [Policy(name="policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
-        num_subpolicies=num_subs, network='mlp') for x in 
+        num_subpolicies=num_subs, network=args.master_network) for x in 
         range(num_master_groups)]
     old_policies = [Policy(name="old_policy_%i"%x, ob=master_obs[x], ac_space=ac_space, 
-        num_subpolicies=num_subs, network='mlp') for x in 
+        num_subpolicies=num_subs, network=args.master_network) for x in 
         range(num_master_groups)]
 
     if not recurrent:
         sub_obs = [U.get_placeholder(name="sub_ob_%i"%x, dtype=tf.float32, 
             shape=[None] + list(ob_space.shape)) for x in range(num_subs)]
         sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-            network='mlp') for x in range(num_subs)]
+            network=args.subpol_network) for x in range(num_subs)]
         old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-            ac_space=ac_space, network='mlp') for x in range(num_subs)]
+            ac_space=ac_space, network=args.subpol_network) for x in range(num_subs)]
     elif recurrent:
         envsperbatch = max(1, num_env // num_sub_batches)
         num_batches = num_env // envsperbatch
@@ -97,13 +97,14 @@ def start(callback, args):
             shape=[1]) for x in range(num_subs)]
 
         sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=sub_obs[x], ac_space=ac_space, 
-            network='lstm', nsteps=num_rollouts, nbatch=nbatch, nlstm=nlstm, 
+            network=args.subpol_network, nsteps=num_rollouts, nbatch=nbatch, nlstm=nlstm, 
             states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
         old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
-            ac_space=ac_space, network='lstm', nsteps=num_rollouts, nbatch=nbatch, nlstm=nlstm,
-            states=sub_states[x], masks=sub_masks[x]) for x in range(num_subs)]
+            ac_space=ac_space, network=args.subpol_network, nsteps=num_rollouts, 
+            nbatch=nbatch, nlstm=nlstm, states=sub_states[x], masks=sub_masks[x]) 
+            for x in range(num_subs)]
         actor_sub_policies = [SubPolicy(name="sub_policy_%i"%x, ob=actor_sub_obs[x], 
-            ac_space=ac_space, network='lstm', nsteps=1, nbatch=1, nlstm=nlstm,
+            ac_space=ac_space, network=args.subpol_network, nsteps=1, nbatch=1, nlstm=nlstm,
             states=actor_sub_states[x], masks=actor_sub_masks[x], reuse=True) 
             for x in range(num_subs)]
 
@@ -134,6 +135,10 @@ def start(callback, args):
         for i in range(num_master_groups):
             seed = np.random.randint(0, 2**31-1)
             for j in range(num_sub_in_grp):
+                # NOTE: implement env sampling in the seed function;
+                # it is seeded only the first time seed is called. 
+                # every subsequent call would call a sampler to randomize the env.
+                # this 'overloading' is to ensure compatibility with wrappers.
                 envs[i].envs[j].seed(seed)
 
         # TODO: is warm-up staggering necessary?

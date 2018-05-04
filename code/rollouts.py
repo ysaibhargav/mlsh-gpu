@@ -5,7 +5,7 @@ import pdb
 
 def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon, 
         num_sub_in_grp, stochastic, args):
-    recurrent = args.network == 'lstm'
+    recurrent = args.subpol_network == 'lstm'
 
     EPS = 0.1
 
