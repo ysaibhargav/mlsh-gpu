@@ -238,8 +238,6 @@ def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
                     subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
                     subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
                     subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
-                    if recurrent and i == 0:
-                        subpols[mac]["state"] = seg["state"][j][k][mac]
                     subpol_counts[mac] += 1
     else:
         subpols = []

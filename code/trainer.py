@@ -78,8 +78,6 @@ def start(callback, args):
         old_sub_policies = [SubPolicy(name="old_sub_policy_%i"%x, ob=sub_obs[x], 
             ac_space=ac_space, network='mlp') for x in range(num_subs)]
     elif recurrent:
-        num_env = num_master_groups * num_sub_in_grp 
-
         envsperbatch = max(1, num_env // num_sub_batches)
         num_batches = num_env // envsperbatch
         nbatch = envsperbatch * num_rollouts
@@ -158,6 +156,6 @@ def start(callback, args):
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs, recurrent=recurrent)
-            learner.updateSubPolicies(test_seg, num_sub_batches, num_rollouts, num_env, optimize=(mini_ep >= warmup_time), 
-                    recurrent=recurrent)
+            learner.updateSubPolicies(test_seg, num_sub_batches, num_rollouts, num_env, 
+                    optimize=(mini_ep >= warmup_time), recurrent=recurrent)
             mini_ep += 1

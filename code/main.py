@@ -40,7 +40,6 @@ from baselines.logger import Logger, CSVOutputFormat, HumanOutputFormat
 
 # python3 main.py --task=MovementBandits-v0 --num_subs=2 --macro_duration=10 --num_rollouts=2000 --warmup_time=9 --train_time=1 --num_master_grp=4 --num_sub_batches=15 --num_sub_in_grp=1 --vfcoeff=.5 --entcoeff=0 --master_lr=1e-2 --sub_lr=3e-4 --replay=n --divcoeff=0 test
 
-# TODO: fix reward calculations 
 # TODO: master policy - append the subpolicy states in the observation
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
