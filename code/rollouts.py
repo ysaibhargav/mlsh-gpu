@@ -67,7 +67,8 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                 for j in range(num_sub_in_grp):
                     if np.random.uniform() < EPS:
                         cur_subpolicy[i][j] = np.random.randint(0, len(sub_policies))
-                    cur_subpolicy[i][j] = envs[i].envs[j].env.env.realgoal
+                    if args.continue_iter is None:
+                        cur_subpolicy[i][j] = envs[i].envs[j].env.env.realgoal
 
             if args.force_subpolicy is not None:
                 cur_subpolicy = [[args.force_subpolicy for _ in range(num_sub_in_grp)]

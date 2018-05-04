@@ -144,63 +144,7 @@ class Learner:
 
 
     # TODO: explained variance
-    def updateMasterPolicy(self, seg):
-        """
-        ob, ac, atarg, tdlamret = seg["macro_ob"], seg["macro_ac"], \
-                seg["macro_adv"], seg["macro_tdlamret"]
-        sample_ob = ob[0][0][0]
-        
-        def transform_array(array, shape=None):
-            array = np.split(array, self.num_master_groups, axis=1)
-            if shape != None: 
-                shape = [-1] + shape
-                array = [elem.reshape(*shape) for elem in array]
-            else:
-                array = [elem.reshape(-1) for elem in array]
-            return array
-
-        # ob - T x num_master_groups x num_sub_grps x ob_dims
-        # flatten to make train batches
-        ob = transform_array(ob, list(sample_ob.shape)) 
-        ac = transform_array(ac)
-        atarg = transform_array(atarg)
-        tdlamret = transform_array(tdlamret) 
-
-        atarg = np.array(atarg, dtype='float32')
-        mean = atarg.mean()
-        std = atarg.std()
-        atarg = (atarg - mean) / max(std, 0.000001)
-
-        d = [Dataset(dict(ob=ob[i], ac=ac[i], atarg=atarg[i], vtarg=tdlamret[i]), 
-            shuffle=True) for i in range(self.num_master_groups)]
-        optim_batchsize = min(self.optim_batchsize, ob[0].shape[0])
-        num_updates = ob[0].shape[0] // optim_batchsize
-
-        [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
-        [f() for f in self.assign_old_eq_new]
-
-        kl_array, pol_surr_array, vf_loss_array, entropy_array, values_array = [[] for _ in 
-                range(5)]
-        for _ in range(self.optim_epochs):
-            for __ in range(num_updates):
-                batches = [next(d[i].iterate_once(optim_batchsize))
-                        for i in range(self.num_master_groups)]
-                feed_dict = {}
-                for i in range(self.num_master_groups):
-                    feed_dict[self.master_obs[i]] = batches[i]['ob']
-                    feed_dict[self.master_acs[i]] = batches[i]['ac']
-                    feed_dict[self.master_atargs[i]] = batches[i]['atarg']
-                    feed_dict[self.master_ret[i]] = batches[i]['vtarg']
-
-                _, kl, pol_surr, vf_loss, entropy, values = U.get_session().run(
-                        [self.master_train_steps, 
-                    self.master_kl, self.master_pol_surr, self.master_vf_loss, 
-                    self.master_entropy, self.master_values], feed_dict)
-                kl_array.append(kl)
-                pol_surr_array.append(pol_surr)
-                vf_loss_array.append(vf_loss)
-                entropy_array.append(entropy)
-        """
+    def updateMasterPolicy(self, seg, optimize=False):
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
         ep_lens = flatten_lists(seg["ep_lens"])
@@ -209,13 +153,68 @@ class Learner:
         logger.logkv('Mean episode return', np.mean(ep_rets))
         logger.logkv('Mean episode length', np.mean(ep_lens))
         logger.dumpkvs()
-        """
-        logger.logkv('(M) KL', np.mean(kl_array))
-        logger.logkv('(M) policy loss', np.mean(pol_surr_array))
-        logger.logkv('(M) value loss', np.mean(vf_loss_array))
-        logger.logkv('(M) entropy loss', np.mean(entropy_array))
-        logger.dumpkvs()
-        """
+
+        if optimize:
+            ob, ac, atarg, tdlamret = seg["macro_ob"], seg["macro_ac"], \
+                    seg["macro_adv"], seg["macro_tdlamret"]
+            sample_ob = ob[0][0][0]
+            
+            def transform_array(array, shape=None):
+                array = np.split(array, self.num_master_groups, axis=1)
+                if shape != None: 
+                    shape = [-1] + shape
+                    array = [elem.reshape(*shape) for elem in array]
+                else:
+                    array = [elem.reshape(-1) for elem in array]
+                return array
+
+            # ob - T x num_master_groups x num_sub_grps x ob_dims
+            # flatten to make train batches
+            ob = transform_array(ob, list(sample_ob.shape)) 
+            ac = transform_array(ac)
+            atarg = transform_array(atarg)
+            tdlamret = transform_array(tdlamret) 
+
+            atarg = np.array(atarg, dtype='float32')
+            mean = atarg.mean()
+            std = atarg.std()
+            atarg = (atarg - mean) / max(std, 0.000001)
+
+            d = [Dataset(dict(ob=ob[i], ac=ac[i], atarg=atarg[i], vtarg=tdlamret[i]), 
+                shuffle=True) for i in range(self.num_master_groups)]
+            optim_batchsize = min(self.optim_batchsize, ob[0].shape[0])
+            num_updates = ob[0].shape[0] // optim_batchsize
+
+            [self.policies[i].ob_rms.update(ob[i]) for i in range(self.num_master_groups)]
+            [f() for f in self.assign_old_eq_new]
+
+            kl_array, pol_surr_array, vf_loss_array, entropy_array, values_array = [[] for _ in 
+                    range(5)]
+            for _ in range(self.optim_epochs):
+                for __ in range(num_updates):
+                    batches = [next(d[i].iterate_once(optim_batchsize))
+                            for i in range(self.num_master_groups)]
+                    feed_dict = {}
+                    for i in range(self.num_master_groups):
+                        feed_dict[self.master_obs[i]] = batches[i]['ob']
+                        feed_dict[self.master_acs[i]] = batches[i]['ac']
+                        feed_dict[self.master_atargs[i]] = batches[i]['atarg']
+                        feed_dict[self.master_ret[i]] = batches[i]['vtarg']
+
+                    _, kl, pol_surr, vf_loss, entropy, values = U.get_session().run(
+                            [self.master_train_steps, 
+                        self.master_kl, self.master_pol_surr, self.master_vf_loss, 
+                        self.master_entropy, self.master_values], feed_dict)
+                    kl_array.append(kl)
+                    pol_surr_array.append(pol_surr)
+                    vf_loss_array.append(vf_loss)
+                    entropy_array.append(entropy)
+
+            logger.logkv('(M) KL', np.mean(kl_array))
+            logger.logkv('(M) policy loss', np.mean(pol_surr_array))
+            logger.logkv('(M) value loss', np.mean(vf_loss_array))
+            logger.logkv('(M) entropy loss', np.mean(entropy_array))
+            logger.dumpkvs()
 
     def updateSubPoliciesRecurrent(self, test_segs, num_batches, horizon, num_env, 
             optimize=True):

@@ -157,7 +157,7 @@ def start(callback, args):
             allrolls.append(rolls)
             # train theta
             rollouts.add_advantage_macro(rolls, macro_duration, 0.99, 0.98)
-            learner.updateMasterPolicy(rolls)
+            learner.updateMasterPolicy(rolls, optimize=(args.continue_iter is not None))
             # train phi
             test_seg = rollouts.prepare_allrolls(allrolls, macro_duration, 0.99, 0.98, 
                     num_subpolicies=num_subs, recurrent=recurrent)
