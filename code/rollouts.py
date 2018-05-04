@@ -53,7 +53,9 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
 
     prev_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
     cur_subpolicy = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
-    
+
+    pretraining_policies = np.zeros([num_master_groups, num_sub_in_grp], 'int32')
+
     while True:
         if t % macrolen == 0:
             # cur_subpolicy - num_master_groups * num_sub_in_grp
@@ -67,6 +69,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                 for j in range(num_sub_in_grp):
                     if np.random.uniform() < EPS:
                         cur_subpolicy[i][j] = np.random.randint(0, len(sub_policies))
+                    cur_subpolicy[i][j] = pretraining_policies[i][j]
                     #cur_subpolicy[i][j] = envs[i].envs[j].env.env.realgoal
 
             if args.force_subpolicy is not None:
@@ -142,6 +145,10 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
 
         ob, rew, _new, info = zip(*[env.step(ac[i]) for i, env in enumerate(envs)])
         rews[i] = rew
+
+        for i in range(num_master_groups):
+            for j in range(num_sub_in_grp):
+                pretraining_policies[i][j] = int(info[i][j]['ghost_in_frame'][0])
 
         # TODO: replay - render the environment every few steps
         if replay:
