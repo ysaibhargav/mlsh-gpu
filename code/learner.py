@@ -145,6 +145,7 @@ class Learner:
 
     # TODO: explained variance
     def updateMasterPolicy(self, seg):
+        """
         ob, ac, atarg, tdlamret = seg["macro_ob"], seg["macro_ac"], \
                 seg["macro_adv"], seg["macro_tdlamret"]
         sample_ob = ob[0][0][0]
@@ -199,7 +200,7 @@ class Learner:
                 pol_surr_array.append(pol_surr)
                 vf_loss_array.append(vf_loss)
                 entropy_array.append(entropy)
-
+        """
         ep_rets = flatten_lists(seg["ep_rets"])
         ep_rets = flatten_lists(ep_rets)
         ep_lens = flatten_lists(seg["ep_lens"])
@@ -208,13 +209,13 @@ class Learner:
         logger.logkv('Mean episode return', np.mean(ep_rets))
         logger.logkv('Mean episode length', np.mean(ep_lens))
         logger.dumpkvs()
-
+        """
         logger.logkv('(M) KL', np.mean(kl_array))
         logger.logkv('(M) policy loss', np.mean(pol_surr_array))
         logger.logkv('(M) value loss', np.mean(vf_loss_array))
         logger.logkv('(M) entropy loss', np.mean(entropy_array))
         logger.dumpkvs()
-        
+        """
 
     def updateSubPoliciesRecurrent(self, test_segs, num_batches, horizon, num_env, 
             optimize=True):
