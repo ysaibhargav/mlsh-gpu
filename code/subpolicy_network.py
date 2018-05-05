@@ -109,7 +109,7 @@ class SubPolicy(object):
                 self.num_hid_layers = num_hid_layers
                 self.gaussian_fixed_var = gaussian_fixed_var
                 self._mlp(obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var)
-            if network == 'cnn':
+            elif network == 'cnn':
                 self._cnn(obs, ac_space, gaussian_fixed_var)
             elif network == 'lstm':
                 assert nsteps is not None and nbatch is not None
@@ -129,7 +129,7 @@ class SubPolicy(object):
                     [ac, self.vpred, self.snew])
 
     def act(self, stochastic, ob, states=None, masks=None):
-        if self.network == 'mlp':
+        if self.network == 'mlp' or self.network == 'cnn':
             ac1, vpred1 = self._act(stochastic, ob)
             return ac1, vpred1
         elif self.network == 'lstm':
