@@ -285,6 +285,8 @@ class Learner:
 
 
     def updateSubPoliciesNonRecurrent(self, test_segs, num_batches, optimize=True):
+        if not optimize: return
+
         optimizable = []
         test_ds = []
         batchsizes = []
