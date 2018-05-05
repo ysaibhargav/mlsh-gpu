@@ -122,7 +122,7 @@ class SubPolicy(object):
         # sample actions
         stochastic = tf.placeholder(dtype=tf.bool, shape=())
         ac = U.switch(stochastic, self.pd.sample(), self.pd.mode())
-        if network == 'mlp':
+        if network == 'mlp' or network == 'cnn':
             self._act = U.function([stochastic, ob], [ac, self.vpred])
         elif network == 'lstm':
             self._act = U.function([stochastic, ob, states, masks], 
