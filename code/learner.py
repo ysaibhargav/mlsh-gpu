@@ -81,13 +81,10 @@ class Learner:
                 shape=[nbatch]) for _ in range(num_subpolicies)]
             self.sub_states = [U.get_placeholder(name="states_%i"%_, dtype=tf.float32, 
                 shape=[envsperbatch, 2*nlstm]) for _ in range(num_subpolicies)]
-            self.loss_masks = [tf.placeholder(dtype=tf.float32, 
-                shape=[None]) for _ in range(num_subpolicies)]
         sub_retvals = zip(*[self.policy_loss(sub_policies[i], 
             old_sub_policies[i], self.sub_obs[i], self.sub_acs[i], self.sub_atargs[i], 
-            self.sub_ret[i], clip_param, mask=self.loss_masks[i] if recurrent else 
-            tf.constant(1.), vfcoeff=vfcoeff, entcoeff=entcoeff, divcoeff=divcoeff, 
-            logpacs=None)#self.logpacs[i]) 
+            self.sub_ret[i], clip_param, mask=self.loss_masks[i], vfcoeff=vfcoeff, 
+            entcoeff=entcoeff, divcoeff=divcoeff, logpacs=None)#self.logpacs[i]) 
             for i in range(num_subpolicies)])
         self.sub_losses, self.sub_kl, self.sub_pol_surr, self.sub_vf_loss, \
                 self.sub_entropy, self.sub_values, self.div_loss = sub_retvals 
@@ -294,8 +291,8 @@ class Learner:
         for i in range(self.num_subpolicies):
             is_optimizing = True
             test_seg = test_segs[i]
-            ob, ac, atarg, tdlamret = test_seg["ob"], test_seg["ac"], test_seg["adv"], \
-                    test_seg["tdlamret"]
+            ob, ac, atarg, tdlamret, mask = test_seg["ob"], test_seg["ac"], test_seg["adv"], \
+                    test_seg["tdlamret"], test_seg["mask"]
             # logpacs for diversity loss
             logpacs = [U.get_session().run(pi.pd.logp(test_seg['ac']), 
                 {self.sub_obs[j]: test_seg['ob']}) for j, pi in enumerate(self.sub_policies)]
@@ -308,7 +305,7 @@ class Learner:
                 atarg = np.array(atarg, dtype='float32')
                 atarg = (atarg - atarg.mean()) / max(atarg.std(), 0.000001)
             test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret, 
-                logpacs=logpacs), shuffle=True)
+                logpacs=logpacs, mask=mask), shuffle=True)
             test_batchsize = int(ob.shape[0] / num_batches)
 
             optimizable.append(is_optimizing)
@@ -336,6 +333,7 @@ class Learner:
                             feed_dict[batch_num][self.sub_acs[i]] = test_batch['ac']
                             feed_dict[batch_num][self.sub_atargs[i]] = test_batch['atarg']
                             feed_dict[batch_num][self.sub_ret[i]] = test_batch['vtarg']
+                            feed_dict[batch_num][self.loss_masks[i]] = test_batch['mask']
                             feed_dict[batch_num][self.logpacs[i]] = \
                                     test_batch['logpacs'].transpose()
                             batch_num += 1
