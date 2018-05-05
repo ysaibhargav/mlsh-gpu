@@ -230,9 +230,10 @@ def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
             advs = np.zeros(subpol_counts[i], 'float32')
             tdlams = np.zeros(subpol_counts[i], 'float32')
             news = np.zeros(subpol_counts[i], 'int32')
+            masks = np.zeros(subpol_counts[i], 'int32')
             acs = np.array([seg["ac"][0][0][0] for _ in range(subpol_counts[i])])
             subpols.append({"ob": obs, "adv": advs, "tdlamret": tdlams, "ac": acs, 
-                "new": news}) 
+                "new": news, "mask": masks}) 
         subpol_counts = []
         for i in range(num_subpolicies):
             subpol_counts.append(0)
@@ -245,6 +246,11 @@ def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
                     subpols[mac]["tdlamret"][subpol_counts[mac]] = seg["tdlamret"][i][j][k]
                     subpols[mac]["ac"][subpol_counts[mac]] = seg["ac"][i][j][k]
                     subpols[mac]["new"][subpol_counts[mac]] = seg["new"][i][j][k]
+                    if i and seg["new"][i-1][j][k] and seg["new"][i][j][k]:
+                        mask_val = 0
+                    else:
+                        mask_val = 1
+                    subpols[mac]["mask"][subpol_counts[mac]] = mask_val 
                     subpol_counts[mac] += 1
     else:
         subpols = []
@@ -268,17 +274,24 @@ def split_segments(seg, macrolen, num_subpolicies, recurrent=False):
             for j in range(num_master_groups):
                 for k in range(num_sub_in_grp):
                     env_idx = (j*num_sub_in_grp)+k
-                    #idx = ((j*num_sub_in_grp)+k)*horizon+i
                     mac = seg["macro_ac"][int(i/macrolen)][j][k]
                     subpols[mac]["ob"][env_idx][i] = seg["ob"][i][j][k]
                     subpols[mac]["adv"][env_idx][i] = seg["adv"][i][j][k]
                     subpols[mac]["tdlamret"][env_idx][i] = seg["tdlamret"][i][j][k]
                     subpols[mac]["ac"][env_idx][i] = seg["ac"][i][j][k]
                     subpols[mac]["new"][env_idx][i] = seg["new"][i][j][k]
-                    subpols[mac]["mask"][env_idx][i] = 1
+                    # mask out all partial episodes to avoid confusing network
+                    if i and seg["new"][i-1][j][k] and seg["new"][i][j][k]:
+                        mask_val = 0
+                    else:
+                        mask_val = 1
+                    subpols[mac]["mask"][env_idx][i] = mask_val
+                    # mask out all non active subpolicies
+                    # preserve reset information for state transitions
                     for l in range(num_subpolicies):
                         subpols[l]["new"][env_idx][i] = seg["new"][i][j][k]
-                        subpols[l]["mask"][env_idx][i] = int(l == mac)
+                        if l != mac:
+                            subpols[l]["mask"][env_idx][i] = 0 
 
         for i in range(num_subpolicies):
             subpols[i]["ob"] = flatten_env_time_dims(subpols[i]["ob"])
