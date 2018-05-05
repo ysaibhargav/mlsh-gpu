@@ -13,10 +13,10 @@ def feature_net(unscaled_images):
     scaled_images = tf.cast(unscaled_images, tf.float32)# / 255.
     activ = tf.nn.relu
     h = activ(conv(scaled_images, 'c1', nf=8, rf=8, stride=4, init_scale=np.sqrt(2)))
-    h2 = activ(conv(h, 'c2', nf=4, rf=4, stride=2, init_scale=np.sqrt(2)))
-    h3 = activ(conv(h2, 'c3', nf=2, rf=3, stride=1, init_scale=np.sqrt(2)))
+    h2 = activ(conv(h, 'c2', nf=16, rf=4, stride=2, init_scale=np.sqrt(2)))
+    h3 = activ(conv(h2, 'c3', nf=16, rf=3, stride=1, init_scale=np.sqrt(2)))
     h3 = conv_to_fc(h3)
-    return activ(fc(h3, 'fc1', nh=16, init_scale=np.sqrt(2)))
+    return activ(fc(h3, 'fc1', nh=128, init_scale=np.sqrt(2)))
 
 class SubPolicy(object):
     def _mlp(self, obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var):
@@ -42,6 +42,23 @@ class SubPolicy(object):
             self.pdparam = U.concatenate([mean, mean * 0.0 + logstd], axis=1)
         else:
             self.pdparam = U.dense(last_out, pdtype.param_shape()[0], "polfinal", 
+                    U.normc_initializer(0.01))
+        self.pd = pdtype.pdfromflat(self.pdparam)
+
+    def _cnn(self, obs, ac_space, gaussian_fixed_var):
+        features = feature_net(obs)
+        self.vpred = U.dense(features, 1, "vffinal", 
+                weight_init=U.normc_initializer(1.0))[:,0]
+        
+        self.pdtype = pdtype = make_pdtype(ac_space)
+        if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
+            mean = U.dense(features, pdtype.param_shape()[0]//2, "polfinal", 
+                    U.normc_initializer(0.01))
+            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], 
+                    initializer=tf.zeros_initializer())
+            self.pdparam = U.concatenate([mean, mean * 0.0 + logstd], axis=1)
+        else:
+            self.pdparam = U.dense(features, pdtype.param_shape()[0], "polfinal", 
                     U.normc_initializer(0.01))
         self.pd = pdtype.pdfromflat(self.pdparam)
 
@@ -92,6 +109,8 @@ class SubPolicy(object):
                 self.num_hid_layers = num_hid_layers
                 self.gaussian_fixed_var = gaussian_fixed_var
                 self._mlp(obs, hid_size, num_hid_layers, ac_space, gaussian_fixed_var)
+            if network == 'cnn':
+                self._cnn(obs, ac_space, gaussian_fixed_var)
             elif network == 'lstm':
                 assert nsteps is not None and nbatch is not None
                 assert states is not None and masks is not None
