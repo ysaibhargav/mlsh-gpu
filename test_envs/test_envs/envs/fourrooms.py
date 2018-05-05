@@ -57,6 +57,7 @@ wwwwwwwwwwwww
     def randomizeCorrect(self):
         # self.realgoal = self.np_random.choice([68, 69, 70, 71, 72, 78, 79, 80, 81, 82, 88, 89, 90, 91, 92, 93, 99, 100, 101, 102, 103])
         self.realgoal = self.np_random.choice([68, 80, 90, 103])
+        print('Real goal is %d'%self.realgoal)
         #self.realgoal = 103
         pass
 
@@ -109,4 +110,4 @@ wwwwwwwwwwwww
         # statevec[state] = 1
         # return statevec, float(done), False, None
 
-        return state, float(done), False, None
+        return state, float(done), False, {} 

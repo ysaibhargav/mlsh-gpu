@@ -68,7 +68,12 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                     if np.random.uniform() < EPS:
                         cur_subpolicy[i][j] = np.random.randint(0, len(sub_policies))
                     if args.continue_iter is None:
-                        cur_subpolicy[i][j] = envs[i].envs[j].env.env.realgoal
+                        if args.task == 'Fourrooms-v0':
+                            subpol_dict = {68: 0, 80: 1, 90: 2, 103: 3}
+                            chosen_subpol = subpol_dict[envs[i].envs[j].env.env.realgoal]
+                        else:
+                            chosen_subpol = envs[i].envs[j].env.env.realgoal
+                        cur_subpolicy[i][j] = chosen_subpol 
 
             if args.force_subpolicy is not None:
                 cur_subpolicy = [[args.force_subpolicy for _ in range(num_sub_in_grp)]

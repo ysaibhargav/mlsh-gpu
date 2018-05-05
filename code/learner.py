@@ -293,19 +293,20 @@ class Learner:
             test_seg = test_segs[i]
             ob, ac, atarg, tdlamret, mask = test_seg["ob"], test_seg["ac"], test_seg["adv"], \
                     test_seg["tdlamret"], test_seg["mask"]
-            # logpacs for diversity loss
-            logpacs = [U.get_session().run(pi.pd.logp(test_seg['ac']), 
-                {self.sub_obs[j]: test_seg['ob']}) for j, pi in enumerate(self.sub_policies)]
-            logpacs = np.array(logpacs).transpose()
 
             # don't optimize if insufficient data
             if np.shape(ob)[0] < 1:
                 is_optimizing = False
+                test_d = None
             else:
                 atarg = np.array(atarg, dtype='float32')
                 atarg = (atarg - atarg.mean()) / max(atarg.std(), 0.000001)
-            test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret, 
-                logpacs=logpacs, mask=mask), shuffle=True)
+                # logpacs for diversity loss
+                logpacs = [U.get_session().run(pi.pd.logp(test_seg['ac']), 
+                    {self.sub_obs[j]: test_seg['ob']}) for j, pi in enumerate(self.sub_policies)]
+                logpacs = np.array(logpacs).transpose()
+                test_d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret, 
+                    logpacs=logpacs, mask=mask), shuffle=True)
             test_batchsize = int(ob.shape[0] / num_batches)
 
             optimizable.append(is_optimizing)
