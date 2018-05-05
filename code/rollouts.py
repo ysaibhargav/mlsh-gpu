@@ -179,7 +179,12 @@ def add_advantage_macro(seg, macrolen, gamma, lam):
     T = int(len(seg["rew"])/macrolen)
     seg["macro_adv"] = gaelam = np.empty([T]+group_shape, 'float32')
     # macro rewards for master
-    rew = np.sum(seg["rew"].reshape(-1, macrolen, group_shape[0], group_shape[1]), axis=1)
+    # set rewards to 0s for partial episodes
+    _new = seg["new"].copy()
+    _rew = seg["rew"].copy()
+    _new = (1. - (np.roll(_new, 1, axis=0)*_new))
+    rew = np.sum((_rew*_new).reshape(-1, macrolen, group_shape[0], group_shape[1]), axis=1)
+    #rew = np.sum(seg["rew"].reshape(-1, macrolen, group_shape[0], group_shape[1]), axis=1)
     lastgaelam = np.zeros(group_shape, dtype='float32') 
     for t in reversed(range(T)):
         nonterminal = 1-new[t+1]
