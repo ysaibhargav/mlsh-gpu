@@ -43,7 +43,7 @@ wwwwwwwwwwwww
         self.observation_space = spaces.Discrete(np.sum(self.occupancy == 0))
 
         self.directions = [np.array((-1,0)), np.array((1,0)), np.array((0,-1)), np.array((0,1))]
-        self.rng = np.random.RandomState(1234)
+        self.seed()
 
         self.tostate = {}
         statenum = 0
@@ -55,14 +55,18 @@ wwwwwwwwwwwww
         self.tocell = {v:k for k,v in self.tostate.items()}
 
     def randomizeCorrect(self):
-        # self.realgoal = np.random.choice([68, 69, 70, 71, 72, 78, 79, 80, 81, 82, 88, 89, 90, 91, 92, 93, 99, 100, 101, 102, 103])
-        self.realgoal = np.random.choice([68, 80, 90, 103])
-        self.realgoal = 103
+        # self.realgoal = self.np_random.choice([68, 69, 70, 71, 72, 78, 79, 80, 81, 82, 88, 89, 90, 91, 92, 93, 99, 100, 101, 102, 103])
+        self.realgoal = self.np_random.choice([68, 80, 90, 103])
+        print('Real goal is %d'%self.realgoal)
+        #self.realgoal = 103
         pass
 
-    def _seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+    def seed(self, seed=None):
+        if hasattr(self, 'np_random'):# and seed is None:
+            self.randomizeCorrect()
+        else:
+            self.np_random, seed = seeding.np_random(seed)
+            return [seed]
 
     def empty_around(self, cell):
         avail = []
@@ -95,9 +99,9 @@ wwwwwwwwwwwww
         nextcell = tuple(self.currentcell + self.directions[action])
         if not self.occupancy[nextcell]:
             self.currentcell = nextcell
-            if self.rng.uniform() < 1/3.:
+            if self.np_random.uniform() < 1/3.:
                 empty_cells = self.empty_around(self.currentcell)
-                self.currentcell = empty_cells[self.rng.randint(len(empty_cells))]
+                self.currentcell = empty_cells[self.np_random.randint(len(empty_cells))]
 
         state = self.tostate[self.currentcell]
         done = state == self.realgoal
@@ -106,4 +110,4 @@ wwwwwwwwwwwww
         # statevec[state] = 1
         # return statevec, float(done), False, None
 
-        return state, float(done), False, None
+        return state, float(done), False, {} 
