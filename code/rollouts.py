@@ -77,7 +77,7 @@ def traj_segment_generator(policies, sub_policies, envs, macrolen, horizon,
                         for _ in range(num_master_groups)]
 
         if t > 0 and t % horizon == 0:
-            dicti = {"ob" : obs, "rew" : rews, "vpred" : vpreds, "vpred2": vpreds2, 
+            dicti = {"ob" : obs, "rew" : rews/args.r_scale, "vpred" : vpreds, "vpred2": vpreds2, 
                     "new" : news, "ac" : acs, "ep_rets" : (ep_rets), "ep_lens" : (ep_lens), 
                     "macro_ac" : macro_acs, "macro_vpred" : macro_vpreds}
             if recurrent:
